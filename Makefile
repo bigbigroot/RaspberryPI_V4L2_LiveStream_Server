@@ -10,7 +10,8 @@ CXX = g++
 CFLAGS = -pthread
 CXXFLAGS = -pthread 
 
-SRC = main.c
+SRC = server.c \
+main.c 
 
 INC = 
 LIBS = 
@@ -35,7 +36,7 @@ $(BUILD_DIR)/%.o : %.cpp Makefile | $(BUILD_DIR)
 	$(CXX) -c -Wall $(CXXFLAGS) $(INC) $< -o $@ 
 
 $(BINARY_DIR)/$(TARGET): $(OBJ) Makefile
-	$(CC) $(CFLAGS) $< -o $@ $(LIBS)
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LIBS)
 
 $(BUILD_DIR): 
 	mkdir $@
