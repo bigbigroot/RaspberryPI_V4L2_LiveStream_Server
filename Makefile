@@ -7,11 +7,14 @@ DEBUG = 1
 
 CC = gcc
 CXX = g++
-CFLAGS = -pthread
-CXXFLAGS = -pthread 
+CFLAGS =
+CXXFLAGS =
 
-SRC = server.c \
-main.c 
+LDFLAGS = -pthread 
+
+SRC = capture.cpp \
+server.c \
+main.cpp 
 
 INC = 
 LIBS = 
@@ -19,6 +22,7 @@ LIBS =
 ifeq ($(DEBUG), 1)
 	CFLAGS += -g 
 	CXXFLAGS += -g 
+	LDFLAGS += -g
 endif
 
 
@@ -32,11 +36,11 @@ $(BUILD_DIR)/%.o : %.c Makefile | $(BUILD_DIR)
 	$(CC) -c -Wall $(CFLAGS) $(INC) $< -o $@ 
 
 $(BUILD_DIR)/%.o : %.cpp Makefile | $(BUILD_DIR)
-	$(CXX) -MM -MF $(BUILD_DIR)/$(notdir $(@:.o=.d)) 
+	$(CXX) -MM -MF $(BUILD_DIR)/$(notdir $(@:.o=.d)) $<
 	$(CXX) -c -Wall $(CXXFLAGS) $(INC) $< -o $@ 
 
 $(BINARY_DIR)/$(TARGET): $(OBJ) Makefile
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LIBS)
+	$(CXX) $(LDFLAGS) $(OBJ) -o $@ $(LIBS)
 
 $(BUILD_DIR): 
 	mkdir $@
