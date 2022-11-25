@@ -1,6 +1,6 @@
 TARGET = LiveStreamServer
 
-BUILD_DIR = Build
+BUILD_DIR = build
 BINARY_DIR = .
 
 DEBUG = 1
@@ -12,9 +12,10 @@ CXXFLAGS = -std=c++17
 
 LDFLAGS = -pthread 
 
-SRC = capture.cpp \
-rtp.cpp \
-main.cpp 
+SRC = \
+src/capture.cpp \
+src/main.cpp 
+
 
 INC = -I/usr/local/include
 
@@ -29,8 +30,11 @@ endif
 
 
 OBJ = $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(notdir $(basename $(SRC)))))
+vpath %.c $(sort $(dir $(SRC)))
+vpath %.cpp $(sort $(dir $(SRC)))
 
 .PHONY: all clean print
+
 all: $(BINARY_DIR)/$(TARGET)
 
 $(BUILD_DIR)/%.o : %.c Makefile | $(BUILD_DIR)

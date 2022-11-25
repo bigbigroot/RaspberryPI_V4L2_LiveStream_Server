@@ -17,7 +17,6 @@
 #include <rtc/rtc.hpp>
 
 #include "capture.h"
-#include "server.h"
 #include "utility.h"
 
 /**
