@@ -8,16 +8,18 @@ DEBUG = 1
 CC = gcc
 CXX = g++
 CFLAGS =
-CXXFLAGS =
+CXXFLAGS = -std=c++17
 
 LDFLAGS = -pthread 
 
 SRC = capture.cpp \
-server.c \
+rtp.cpp \
 main.cpp 
 
-INC = 
-LIBS = 
+INC = -I/usr/local/include
+
+LIBS =  -L/usr/local/lib -ldatachannel
+
 
 ifeq ($(DEBUG), 1)
 	CFLAGS += -g 
@@ -40,7 +42,7 @@ $(BUILD_DIR)/%.o : %.cpp Makefile | $(BUILD_DIR)
 	$(CXX) -c -Wall $(CXXFLAGS) $(INC) $< -o $@ 
 
 $(BINARY_DIR)/$(TARGET): $(OBJ) Makefile
-	$(CXX) $(LDFLAGS) $(OBJ) -o $@ $(LIBS)
+	$(CXX) $(LDFLAGS) $(LIBS) $(OBJ) -o $@ $(LIBS)
 
 $(BUILD_DIR): 
 	mkdir $@

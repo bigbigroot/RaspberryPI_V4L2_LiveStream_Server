@@ -16,8 +16,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include <linux/videodev2.h>    /* video for linux two header file */
-
 #define VIDEO_DEBUG
 #define ENUM_CTRL 0
 
@@ -64,35 +62,35 @@ public:
      * @param dev_name device name for exmaple /dev/videoX
      * @return int if 0 sucess
      */
-    int openDevice();
+    void openDevice(void);
     /**
      * @brief close devide
      * 
      */
-    void closeDevice();
+    void closeDevice(void);
     /**
      * @brief check the device is a video capture device (camera) and then print the 
      * info of the driver 
      * 
      */
-    int checkDevCap();
+    void checkDevCap(void);
 
     /**
      * @brief check which control will be supported  by device. 
      * 
      */
-    void checkAllContol();
+    void checkAllContol(void);
     /**
      * @brief check which image format will be supported  by device. 
      * 
      */
-    int checkVideoFormat();
+    void checkVideoFormat(void);
 
     /**
      * @brief set H.264's video stream format 
      * 
      */
-    int setVideoFormat();
+    void setVideoFormat(void);
     /**
      * @brief 
      * 

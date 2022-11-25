@@ -8,6 +8,10 @@
  * @copyright Copyright (c) 2022
  * 
  */
+#include <stdexcept>
+#include <system_error>
+#include <string>
+
 #include <string.h>
 
 #include <fcntl.h>              /* low-level i/o */
@@ -17,6 +21,8 @@
 #include <sys/time.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
+
+#include <linux/videodev2.h>    /* video for linux two header file */
 
 #include "capture.h"
 #include "utility.h"
@@ -59,34 +65,42 @@ VideoCapture::~VideoCapture(){
  * @param dev_name device name for exmaple /dev/videoX
  * @return int if 0 sucess
  */
-int VideoCapture::openDevice(){
+void VideoCapture::openDevice(void){
     struct stat st;
 
     if (-1 == stat(deviceName, &st)) {
+        isOpen = false;
         ERROR_MESSAGE("Cannot identify '%s': %d, %s\n",
                         deviceName, errno, strerror(errno));
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            "Cannot identify"+std::string(deviceName));
     }
 
     if (!S_ISCHR(st.st_mode)) {
+        isOpen = false;
         ERROR_MESSAGE("%s is no devicen", deviceName);
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            std::string(deviceName)+"is no devicen");
     }
     fd = open(deviceName, O_RDWR);
     if(fd == -1){
+        isOpen = false;
         ERROR_MESSAGE("video info: cannot open device! (%s (%d))\n", 
             strerror(errno), errno);
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            "cannot open device!"+std::string(deviceName));
     }
     isOpen = true;
-    return 0;
 }
 /**
  * @brief close devide
  * 
  */
-void VideoCapture::closeDevice(){
-    close(fd);
+void VideoCapture::closeDevice(void){
+    if(close(fd)==-1){
+        ERROR_MESSAGE("close device error! (%s (%d))\n", 
+            strerror(errno), errno);
+    }
     isOpen = false;
     fd= -1;
 }
@@ -95,12 +109,12 @@ void VideoCapture::closeDevice(){
  * info of the driver 
  * 
  */
-int VideoCapture::checkDevCap(){
+void VideoCapture::checkDevCap(void){
     struct v4l2_capability video_cap;
     if(!isOpen){
-        ERROR_MESSAGE("device(%s) have not opened.",
+        ERROR_MESSAGE("device(%s) has not been opened.",
             deviceName);
-        return -1;
+        throw std::runtime_error("device has not been opened.");
     }
 
     memset(&video_cap, 0, sizeof(video_cap));
@@ -108,7 +122,8 @@ int VideoCapture::checkDevCap(){
     if(ioctl(fd, VIDIOC_QUERYCAP, &video_cap) == -1){
         ERROR_MESSAGE("VIDIOC_QUERYCAP (%s(%d)).",
             strerror(errno), errno);
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_QUERYCAP");
     }else{
         if(!(video_cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)){
             V4L2_MESSAGE("video info: this device is not camera.");
@@ -124,8 +139,6 @@ int VideoCapture::checkDevCap(){
 
         V4L2_MESSAGE("Capture device:\t%s", video_cap.card);
         V4L2_MESSAGE("Capture deriver:\t%s.", video_cap.driver);
-
-        return 0;
     }
 }
 
@@ -138,9 +151,9 @@ void VideoCapture::checkAllContol(){
     struct v4l2_queryctrl  cam_ctrl_info;
     
     if(!isOpen){
-        ERROR_MESSAGE("device(%s) have not opened.",
+        ERROR_MESSAGE("device(%s) has not opened.",
             deviceName);
-        return;
+        throw std::runtime_error("device has not been opened.");
     }
 
     memset(&cam_ctrl_info, 0, sizeof(cam_ctrl_info));
@@ -172,13 +185,13 @@ void VideoCapture::checkAllContol(){
  * @brief check which image format will be supported  by device. 
  * 
  */
-int VideoCapture::checkVideoFormat(){
+void VideoCapture::checkVideoFormat(void){
     struct v4l2_fmtdesc video_fmtdesc;
     
     if(!isOpen){
-        ERROR_MESSAGE("device(%s) have not opened.",
+        ERROR_MESSAGE("device(%s) has not opened.",
             deviceName);
-        return -1;
+        throw std::runtime_error("device has not been opened.");
     }
     
     memset(&video_fmtdesc, 0, sizeof(video_fmtdesc));
@@ -194,22 +207,22 @@ int VideoCapture::checkVideoFormat(){
     if(video_fmtdesc.index == 0){
         ERROR_MESSAGE("video info: VIDIOC_ENUM_FMT (%s (%d)).", 
             strerror(errno), errno);
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_ENUM_FMT");
     }
-    return 0;
 }
 
 /**
  * @brief set H.264's video stream format 
  * 
  */
-int VideoCapture::setVideoFormat(){
+void VideoCapture::setVideoFormat(void){
     struct v4l2_format video_fmt;
     
     if(!isOpen){
-        ERROR_MESSAGE("device(%s) have not opened.",
+        ERROR_MESSAGE("device(%s) has not opened.",
             deviceName);
-        return -1;
+        throw std::runtime_error("device has not been opened.");
     }
 
     memset(&video_fmt, 0, sizeof(video_fmt));
@@ -218,7 +231,8 @@ int VideoCapture::setVideoFormat(){
     if(ioctl(fd, VIDIOC_G_FMT, &video_fmt) == -1){
         ERROR_MESSAGE("VIDIOC_G_FMT (%s(%d)).",
             strerror(errno), errno);
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_G_FMT");
     }
     
     if(windows.height != 0 || windows.width != 0){
@@ -230,11 +244,13 @@ int VideoCapture::setVideoFormat(){
     if(ioctl(fd, VIDIOC_S_FMT, &video_fmt) == -1){
         ERROR_MESSAGE("VIDIOC_S_FMT (%s(%d)).",
             strerror(errno), errno);
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_S_FMT");
     }
     if (video_fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_H264) {
         ERROR_MESSAGE("driver didn't accept H.264 format. Can't proceed.\n");
-        return -1;
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_QUERYCAP");
     }
     if ((video_fmt.fmt.pix.width != windows.width) ||
         (video_fmt.fmt.pix.height != windows.height)){
@@ -247,19 +263,20 @@ int VideoCapture::setVideoFormat(){
     
     imgSize = video_fmt.fmt.pix.sizeimage;
     V4L2_MESSAGE("image size: %d.", imgSize);
-    return 0;
 }
 
 int VideoCapture::readVideoFrame(uint8_t *buf, size_t len){
     if(!isOpen){
-        ERROR_MESSAGE("device(%s) have not opened.",
+        ERROR_MESSAGE("device(%s) has not opened.",
             deviceName);
-        return -1;
+        throw std::runtime_error("device has not been opened.");
     }
     int ret = read(fd, buf, len);
     if(ret == -1){
         ERROR_MESSAGE("read \'%s\' failed(%s(%d)).", deviceName,
             strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "read device failed");
     }else if(ret == 0){
         V4L2_MESSAGE("EOF Read");
     }
