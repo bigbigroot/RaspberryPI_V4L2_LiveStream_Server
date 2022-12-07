@@ -17,9 +17,14 @@ src/capture.cpp \
 src/main.cpp 
 
 
-INC = -I/usr/local/include
+INC = \
+-I/usr/local/include \
+-I/usr//include/x86_64-linux-gnu
 
-LIBS =  -L/usr/local/lib -ldatachannel
+LIBS =  -L/usr/local/lib \
+-ldatachannel \
+-ljson11 \
+-lixwebsocket \
 
 
 ifeq ($(DEBUG), 1)

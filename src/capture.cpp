@@ -24,7 +24,7 @@
 
 #include <linux/videodev2.h>    /* video for linux two header file */
 
-#include "capture.h"
+#include "capture.hpp"
 #include "utility.h"
 
 #if(ENUM_CTRL > 0)
@@ -47,11 +47,12 @@ void VideoCapture::enumerateMenu(__u32 id, __u32 min_i, __u32 max_i){
 }
 #endif
 
-VideoCapture::VideoCapture(const char *name){
+VideoCapture::VideoCapture(const char *name)
+:isOpen(false),
+imgSize(0),
+windows{0,0}
+{
     deviceName = name;
-    isOpen = false;
-    imgSize = 0;
-    windows = {0, 0};
 }
 
 VideoCapture::~VideoCapture(){

@@ -42,7 +42,7 @@ private:
     int fd;
     int imgSize;
     const char *deviceName;
-    bool isOpen=false;
+    bool isOpen;
     struct{
         uint32_t height=0;
         uint32_t width=0;

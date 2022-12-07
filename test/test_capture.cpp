@@ -10,15 +10,15 @@
  */
 
 #include <stdio.h>
-
+#include <signal.h>
 
 #include <memory>
 
-#include "capture.h"
-#include "server.h"
+#include "capture.hpp"
 #include "utility.h"
 
 
+std::unique_ptr<VideoCapture> camera;
 struct v4l2_requestbuffers video_reqbuf;
 
 struct video_buffer_typ
@@ -26,6 +26,10 @@ struct video_buffer_typ
     uint8_t *start;
     size_t len;
 } *video_buffer;
+
+void noExceptExit(int signum){
+    camera->closeDevice();
+}
 
 /**
  * @brief will be called when programm exit by Ctrl-C
@@ -35,10 +39,9 @@ struct video_buffer_typ
 int main(int argc, char *argv[]) {
     unsigned int i;
 
-    // signal(SIGTERM, signal_handler);
-    // signal(SIGINT, signal_handler);    
+    signal(SIGINT, noExceptExit);    
 
-    std::unique_ptr<VideoCapture> camera = std::make_unique<VideoCapture>("/dev/video0");
+    camera = std::make_unique<VideoCapture>("/dev/video0");
 
     camera->setWindow(WindowsSize::pixel_720p);
     try{
