@@ -9,7 +9,7 @@
  * 
  */
 
-#include "protocol.hpp"
+#include "ROAProtocol.hpp"
 
 #include <stdexcept>
 #include <array>
@@ -141,4 +141,83 @@ std::string ROAPMessageToString(ROAPMessage& m)
         json["sdp"] = m.sdp;
     }
     return std::forward<std::string>(json.dump(2));
+}
+
+ROAPSession::ROAPSession():
+currentSeq(0),
+state(ROAPSessionState::Start)
+{
+
+}
+// ROAPSession::~ROAPSession(){}
+
+std::string ROAPSession::createOffer(std::string sdp)
+{
+    ROAPMessage packet;
+    offererSessionId=idg.uniqueIdgenerator();
+    currentSeq=1;
+    packet.messageType = ROAPMessageType::Offer;
+    packet.offererSessionId=offererSessionId;
+    packet.seq=currentSeq;
+    packet.sdp = sdp;
+    state = ROAPSessionState::WaitAnswer;
+    return ROAPMessageToString(packet);
+}
+
+int ROAPSession::sendOffer(std::string sdp)
+{
+    ROAPMessage packet;
+    packet.messageType = ROAPMessageType::Offer;
+    packet.offererSessionId=offererSessionId;
+    packet.answererSessionId=answererSessionId;
+    currentSeq++;
+    packet.seq=currentSeq;
+    packet.sdp = sdp;
+    return sendMessage(ROAPMessageToString(packet));
+}
+
+void ROAPSession::process(ROAPMessage &in,ROAPMessage &out)
+{
+    switch (state)
+    {
+        case ROAPSessionState::WaitAnswer:
+        {
+            if(in.messageType == ROAPMessageType::Answer)
+            {
+                if(in.seq==1)
+                {
+                    this->answererSessionId=in.answererSessionId;
+                }
+
+                if(this->answererSessionId.compare(in.answererSessionId)==0)
+                {
+                    this->sdp = in.sdp;
+                    state = ROAPSessionState::Completed;
+                    out.messageType = ROAPMessageType::Ok;
+                    out.offererSessionId = this->offererSessionId;
+                    out.answererSessionId = this->answererSessionId;
+                    out.seq = currentSeq;
+                }
+            }
+            break;
+        }
+        case ROAPSessionState::Completed:
+        {
+            break;
+        }
+        case ROAPSessionState::WaitForShutdown:
+        {
+            if(in.messageType == ROAPMessageType::Ok) 
+            {
+                state=ROAPSessionState::Closed;
+            }
+            break;
+        } 
+        case ROAPSessionState::Closed:
+        {
+            //do nothing
+            break;
+        }   
+    }
+
 }

@@ -11,7 +11,9 @@
 
 #include <stdio.h>
 #include <signal.h>
+#include <errno.h>
 
+#include <iostream>
 #include <memory>
 #include <vector>
 #include <string>
@@ -20,34 +22,36 @@
 #include <chrono>
 
 #include <rtc/rtc.hpp>
-#include <json11.hpp>
-#include <ixwebsocket/IXWebSocket.h>
+#include <nlohmann/json.hpp>
 
 #include "utility.h"
+#include "MessageHandler.hpp"
+
+bool awaitExit = false;
 
 void signal_handler(int sig){
-    rtc::Cleanup();
-    exit(EXIT_SUCCESS);
+    printf("programm will exit...\n");
+    awaitExit = true;
 }
 
 /**
  * @brief will be called when programm exit by Ctrl-C
  * 
  */
-
 int main(int argc, char *argv[]) {
-    std::string offerSdp("v=0 \n \
-o=- 1946435221213382501 2 IN IP4 127.0.0.1\n\
-s=-\n\
-t=0 0\n\
-a=extmap-allow-mixed\n\
-a=msid-semantic: WMS");
+    FILE *configFile;
     rtc::Configuration rtcConfig;
-    rtc::Description offerDescription(offerSdp,
-    "offer");
     std::unique_ptr<rtc::PeerConnection> pc;
+    std::unique_ptr<MqttConnect> mqttConn;
 
     signal(SIGINT, signal_handler);
+
+    configFile = fopen("config.json", "r");
+    if(configFile == nullptr)
+    {
+        ERROR_MESSAGE("cannot open file!");
+        return EXIT_FAILURE;
+    }
 
     rtc::InitLogger(rtc::LogLevel::Verbose, 
     [](rtc::LogLevel logLevel,std::string msg){
@@ -57,6 +61,23 @@ a=msid-semantic: WMS");
     
     try
     {
+        auto configJson = nlohmann::json::parse(configFile);
+        std::string mqttURL = configJson["mqtt"]["url"].get<std::string>();
+        std::string mqttClientId = configJson["mqtt"]["clientid"].get<std::string>();
+        std::string mqttUsername = configJson["mqtt"]["username"].get<std::string>();
+        std::string mqttPassword = configJson["mqtt"]["password"].get<std::string>();
+
+        mqttConn = std::make_unique<MqttConnect>(mqttURL, mqttClientId, mqttUsername, mqttPassword);
+        mqttConn->registeTopicHandle("webrtc/notify/camera", [](std::string topic, std::string message)
+        {
+
+        });
+
+        mqttConn->registeTopicHandle("webrtc/roap/camera", [](std::string topic, std::string message)
+        {
+            
+        });
+
         rtcConfig.iceServers.emplace_back(rtc::IceServer("stun:192.168.5.10:3478"));
 
         rtc::Preload();
@@ -145,38 +166,10 @@ a=msid-semantic: WMS");
         return EXIT_FAILURE;
     }
 
-    // // Our websocket object
-    // ix::WebSocket webSocket;
+    while(!awaitExit);
+    //... finally ...
+    rtc::Cleanup();
 
-    // std::string url("ws://localhost:8080/");
-    // webSocket.setUrl(url);
-
-    // // Optional heart beat, sent every 45 seconds when there is not any traffic
-    // // to make sure that load balancers do not kill an idle connection.
-    // webSocket.setPingInterval(45);
-
-    // // Per message deflate connection is enabled by default. You can tweak its parameters or disable it
-    // webSocket.disablePerMessageDeflate();
-
-    // // Setup a callback to be fired when a message or an event (open, close, error) is received
-    // webSocket.setOnMessageCallback([](const ix::WebSocketMessagePtr& msg)
-    //     {
-    //         if (msg->type == ix::WebSocketMessageType::Message)
-    //         {
-    //             std::cout << msg->str << std::endl;
-    //         }
-    //     }
-    // );
-
-    // // Now that our callback is setup, we can start our background thread and receive messages
-    // webSocket.start();
-
-    // // ... finally ...
-    for(;;);
-
-
-    // // Stop the connection
-    // webSocket.stop();
 
     return 0;
 }

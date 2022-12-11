@@ -14,6 +14,8 @@ LDFLAGS = -pthread
 
 SRC = \
 src/capture.cpp \
+src/MessageHandler.cpp \
+src/uid.cpp \
 src/main.cpp 
 
 
@@ -23,8 +25,7 @@ INC = \
 
 LIBS =  -L/usr/local/lib \
 -ldatachannel \
--ljson11 \
--lixwebsocket \
+-lpaho-mqtt3c
 
 
 ifeq ($(DEBUG), 1)

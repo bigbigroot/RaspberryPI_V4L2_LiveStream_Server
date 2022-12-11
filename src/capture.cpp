@@ -47,12 +47,12 @@ void VideoCapture::enumerateMenu(__u32 id, __u32 min_i, __u32 max_i){
 }
 #endif
 
-VideoCapture::VideoCapture(const char *name)
+VideoCapture::VideoCapture(std::string name)
 :isOpen(false),
 imgSize(0),
-windows{0,0}
+windows{0,0},
+deviceName{name}
 {
-    deviceName = name;
 }
 
 VideoCapture::~VideoCapture(){
@@ -69,27 +69,27 @@ VideoCapture::~VideoCapture(){
 void VideoCapture::openDevice(void){
     struct stat st;
 
-    if (-1 == stat(deviceName, &st)) {
+    if (-1 == stat(deviceName.c_str(), &st)) {
         isOpen = false;
         ERROR_MESSAGE("Cannot identify '%s': %d, %s\n",
-                        deviceName, errno, strerror(errno));
+                        deviceName.c_str(), errno, strerror(errno));
         throw std::system_error(errno, std::generic_category(), 
-            "Cannot identify"+std::string(deviceName));
+            "Cannot identify" + deviceName);
     }
 
     if (!S_ISCHR(st.st_mode)) {
         isOpen = false;
-        ERROR_MESSAGE("%s is no devicen", deviceName);
+        ERROR_MESSAGE("%s is no devicen", deviceName.c_str());
         throw std::system_error(errno, std::generic_category(), 
-            std::string(deviceName)+"is no devicen");
+            deviceName+" is no devicen");
     }
-    fd = open(deviceName, O_RDWR);
+    fd = open(deviceName.c_str(), O_RDWR);
     if(fd == -1){
         isOpen = false;
         ERROR_MESSAGE("video info: cannot open device! (%s (%d))\n", 
             strerror(errno), errno);
         throw std::system_error(errno, std::generic_category(), 
-            "cannot open device!"+std::string(deviceName));
+            "cannot open device!"+ deviceName);
     }
     isOpen = true;
 }
@@ -114,7 +114,7 @@ void VideoCapture::checkDevCap(void){
     struct v4l2_capability video_cap;
     if(!isOpen){
         ERROR_MESSAGE("device(%s) has not been opened.",
-            deviceName);
+            deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
     }
 
@@ -153,7 +153,7 @@ void VideoCapture::checkAllContol(){
     
     if(!isOpen){
         ERROR_MESSAGE("device(%s) has not opened.",
-            deviceName);
+            deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
     }
 
@@ -191,7 +191,7 @@ void VideoCapture::checkVideoFormat(void){
     
     if(!isOpen){
         ERROR_MESSAGE("device(%s) has not opened.",
-            deviceName);
+            deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
     }
     
@@ -222,7 +222,7 @@ void VideoCapture::setVideoFormat(void){
     
     if(!isOpen){
         ERROR_MESSAGE("device(%s) has not opened.",
-            deviceName);
+            deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
     }
 
@@ -269,12 +269,12 @@ void VideoCapture::setVideoFormat(void){
 int VideoCapture::readVideoFrame(uint8_t *buf, size_t len){
     if(!isOpen){
         ERROR_MESSAGE("device(%s) has not opened.",
-            deviceName);
+            deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
     }
     int ret = read(fd, buf, len);
     if(ret == -1){
-        ERROR_MESSAGE("read \'%s\' failed(%s(%d)).", deviceName,
+        ERROR_MESSAGE("read \'%s\' failed(%s(%d)).", deviceName.c_str(),
             strerror(errno), errno);
         throw std::system_error(errno, std::generic_category(), 
             "read device failed");

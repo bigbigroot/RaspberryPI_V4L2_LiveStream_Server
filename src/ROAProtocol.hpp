@@ -15,6 +15,9 @@
 #include <stdint.h>
 #include <variant>
 #include <string>
+#include <functional>
+
+#include "uid.hpp"
 
 #define number_of(array)
 
@@ -41,11 +44,12 @@ enum class ROAPMessageErrorType : uint8_t
 
 enum class ROAPSessionState : uint8_t
 {
-    WaitForAnswerer,
-    WaitForOfferer,
+    Start,
+    WaitAnswer,
     Completed,
     WaitForShutdown,
-}
+    Closed
+};
 
 struct ROAPMessage
 {
@@ -73,14 +77,17 @@ class ROAPSession
     private:
         std::string offererSessionId;
         std::string answererSessionId;
-        offerer;
-        answerer;
         uint32_t currentSeq;
         ROAPSessionState state;
+        std::string sdp;
+        static UniqueID idg;
     public:
         ROAPSession();
-        ~ROAPSession();
-        void process(ROAPMessage &in);
+        ~ROAPSession()=default;
+        std::function<int(std::string)> sendMessage=nullptr;
+        std::string createOffer(std::string sdp);
+        int sendOffer(std::string sdp);
+        void process(ROAPMessage &in,ROAPMessage &out);
 };
 
 

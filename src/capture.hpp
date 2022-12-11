@@ -41,7 +41,7 @@ class VideoCapture
 private:
     int fd;
     int imgSize;
-    const char *deviceName;
+    std::string deviceName;
     bool isOpen;
     struct{
         uint32_t height=0;
@@ -53,7 +53,7 @@ private:
 #endif
 public:
     VideoCapture()=delete;
-    VideoCapture(const char *name);
+    VideoCapture(std::string name);
     ~VideoCapture();
         
     /**
