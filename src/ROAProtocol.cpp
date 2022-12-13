@@ -143,6 +143,8 @@ std::string ROAPMessageToString(ROAPMessage& m)
     return std::forward<std::string>(json.dump(2));
 }
 
+UniqueID ROAPSession::uniqueIdGen;
+
 ROAPSession::ROAPSession():
 currentSeq(0),
 state(ROAPSessionState::Start)
@@ -154,7 +156,7 @@ state(ROAPSessionState::Start)
 std::string ROAPSession::createOffer(std::string sdp)
 {
     ROAPMessage packet;
-    offererSessionId=idg.uniqueIdgenerator();
+    offererSessionId=uniqueIdGen.uniqueIdgenerator();
     currentSeq=1;
     packet.messageType = ROAPMessageType::Offer;
     packet.offererSessionId=offererSessionId;
@@ -219,5 +221,4 @@ void ROAPSession::process(ROAPMessage &in,ROAPMessage &out)
             break;
         }   
     }
-
 }

@@ -1,0 +1,9 @@
+{
+    "mqtt":
+    {
+        "url": "tcp://192.168.5.10:1883",
+        "clientid": "camera",
+        "username": "test",
+        "password": "test"
+    }
+}

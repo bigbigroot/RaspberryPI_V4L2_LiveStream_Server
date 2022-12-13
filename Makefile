@@ -14,6 +14,7 @@ LDFLAGS = -pthread
 
 SRC = \
 src/capture.cpp \
+src/ROAProtocol.cpp \
 src/MessageHandler.cpp \
 src/uid.cpp \
 src/main.cpp 

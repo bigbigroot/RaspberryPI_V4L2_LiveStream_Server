@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <string>
+
 #define VIDEO_DEBUG
 #define ENUM_CTRL 0
 
@@ -40,9 +42,9 @@ class VideoCapture
 {
 private:
     int fd;
-    int imgSize;
+    int imgSize=0;
     std::string deviceName;
-    bool isOpen;
+    bool isOpen=false;
     struct{
         uint32_t height=0;
         uint32_t width=0;

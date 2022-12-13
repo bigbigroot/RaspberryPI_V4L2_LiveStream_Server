@@ -80,14 +80,15 @@ class ROAPSession
         uint32_t currentSeq;
         ROAPSessionState state;
         std::string sdp;
-        static UniqueID idg;
+        static UniqueID uniqueIdGen;
     public:
         ROAPSession();
         ~ROAPSession()=default;
-        std::function<int(std::string)> sendMessage=nullptr;
+        // std::function<int(std::string)> sendMessage=nullptr;
         std::string createOffer(std::string sdp);
         int sendOffer(std::string sdp);
         void process(ROAPMessage &in,ROAPMessage &out);
+        std::string& getRemoteSdp(){return sdp;}
 };
 
 
