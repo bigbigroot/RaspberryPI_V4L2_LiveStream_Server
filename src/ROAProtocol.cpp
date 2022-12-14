@@ -166,7 +166,7 @@ std::string ROAPSession::createOffer(std::string sdp)
     return ROAPMessageToString(packet);
 }
 
-int ROAPSession::sendOffer(std::string sdp)
+std::string ROAPSession::sendOffer(std::string sdp)
 {
     ROAPMessage packet;
     packet.messageType = ROAPMessageType::Offer;
@@ -175,7 +175,7 @@ int ROAPSession::sendOffer(std::string sdp)
     currentSeq++;
     packet.seq=currentSeq;
     packet.sdp = sdp;
-    return sendMessage(ROAPMessageToString(packet));
+    return ROAPMessageToString(packet);
 }
 
 void ROAPSession::process(ROAPMessage &in,ROAPMessage &out)

@@ -25,6 +25,7 @@
 #include <nlohmann/json.hpp>
 
 #include "utility.h"
+#include "ROAProtocol.hpp"
 #include "MessageHandler.hpp"
 
 bool awaitExit = false;
@@ -40,6 +41,7 @@ void signal_handler(int sig){
  */
 int main(int argc, char *argv[]) {
     FILE *configFile;
+    ROAPSession session;
     rtc::Configuration rtcConfig;
     std::unique_ptr<rtc::PeerConnection> pc;
     std::unique_ptr<MqttConnect> mqttConn;
@@ -68,14 +70,23 @@ int main(int argc, char *argv[]) {
         std::string mqttPassword = configJson["mqtt"]["password"].get<std::string>();
 
         mqttConn = std::make_unique<MqttConnect>(mqttURL, mqttClientId, mqttUsername, mqttPassword);
-        mqttConn->registeTopicHandle("webrtc/notify/camera", [](std::string topic, std::string message)
+        mqttConn->subscribeTopic("webrtc/notify/camera");
+        mqttConn->subscribeTopic("webrtc/roap/camera");
+        mqttConn->registeTopicHandle("webrtc/notify/camera", 
+        [&mqttConn, &pc, &session](std::string topic, std::string message)
         {
+            auto offerSdp = pc->localDescription().value().generateSdp();
+            mqttConn->publishMessage("webrtc/roap/app", session.createOffer(offerSdp));
 
         });
 
-        mqttConn->registeTopicHandle("webrtc/roap/camera", [](std::string topic, std::string message)
+        mqttConn->registeTopicHandle("webrtc/roap/camera", 
+        [&mqttConn, &pc, &session](std::string topic, std::string message)
         {
-            
+            ROAPMessage out;
+            auto in = ROAPMessageParser(message);
+            session.process(in, out);
+            mqttConn->publishMessage("webrtc/roap/app", ROAPMessageToString(out));
         });
 
         rtcConfig.iceServers.emplace_back(rtc::IceServer("stun:192.168.5.10:3478"));

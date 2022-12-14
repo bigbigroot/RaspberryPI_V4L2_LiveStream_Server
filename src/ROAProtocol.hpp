@@ -86,7 +86,7 @@ class ROAPSession
         ~ROAPSession()=default;
         // std::function<int(std::string)> sendMessage=nullptr;
         std::string createOffer(std::string sdp);
-        int sendOffer(std::string sdp);
+        std::string sendOffer(std::string sdp);
         void process(ROAPMessage &in,ROAPMessage &out);
         std::string& getRemoteSdp(){return sdp;}
 };

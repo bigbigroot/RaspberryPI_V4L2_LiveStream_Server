@@ -51,12 +51,13 @@ class MqttConnect
         int unsubscribeTopic(std::string topic);
 };
 
-class MessageHandle
+class NotifyMessage
 {
     private:
     public:
-        MessageHandle()=default;
-        ~MessageHandle()=default;
+        NotifyMessage()=default;
+        ~NotifyMessage()=default;
 };
+
 #endif /* __SIGNALINGCHANNEL_H */
 
