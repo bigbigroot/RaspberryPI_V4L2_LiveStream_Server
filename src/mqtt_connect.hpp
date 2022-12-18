@@ -41,8 +41,8 @@ class MqttConnect
         std::map<std::string, onMessageCallback> allTopicHandles;
     public:
         MqttConnect()=delete;
-        MqttConnect(std::string url, std::string clientId, 
-        std::string username, std::string password);
+        MqttConnect(const std::string& url, const std::string& clientId, 
+        const std::string& username, const std::string& password);
         ~MqttConnect();
         void handleMessage(std::string topic, std::string message);
         void registeTopicHandle(std::string topic, onMessageCallback callback);

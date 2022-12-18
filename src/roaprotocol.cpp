@@ -9,7 +9,7 @@
  * 
  */
 
-#include "ROAProtocol.hpp"
+#include "roaprotocol.hpp"
 
 #include <stdexcept>
 #include <array>
@@ -38,9 +38,8 @@ const std::string messageErrorTypeString[] =
 constexpr size_t ROAPMessageErrorTypeNum = 
 sizeof(messageErrorTypeString)/sizeof(std::string);
 
-ROAPMessage ROAPMessageParser(std::string data)
+void ROAPMessage::parser(std::string data)
 {
-    ROAPMessage ret;
     if(nlohmann::json::accept(data))
     {
         std::string value;
@@ -52,7 +51,7 @@ ROAPMessage ROAPMessageParser(std::string data)
             {
                 if(value.compare(messageTypeString[i]) == 0)
                 {
-                    ret.messageType = ROAPMessageType(i);
+                    messageType = ROAPMessageType(i);
                     break;
                 }
             }
@@ -64,40 +63,39 @@ ROAPMessage ROAPMessageParser(std::string data)
             {
                 if(value.compare(messageErrorTypeString[i]) == 0)
                 {
-                    ret.errorType = ROAPMessageErrorType(i);
+                    errorType = ROAPMessageErrorType(i);
                     break;
                 }
             }
         }
         if(rootJosn.contains("offererSessionId"))
         {
-            ret.offererSessionId = rootJosn["offererSessionId"].get<std::string>();
+            offererSessionId = rootJosn["offererSessionId"].get<std::string>();
         }
         if(rootJosn.contains("answererSessionId"))
         {
-            ret.answererSessionId = rootJosn["answererSessionId"].get<std::string>();
+            answererSessionId = rootJosn["answererSessionId"].get<std::string>();
         }
         if(rootJosn.contains("seq"))
         {
-            ret.seq = rootJosn["seq"].get<unsigned>();
+            seq = rootJosn["seq"].get<unsigned>();
         }
         if(rootJosn.contains("sdp"))
         {
-            ret.sdp = rootJosn["sdp"].get<std::string>();
+            sdp = rootJosn["sdp"].get<std::string>();
         }
 
     }else
     {
         throw std::runtime_error("Invaild Json formate.");
     }
-    return ret;
 }
 
-std::string ROAPMessageToString(ROAPMessage& m)
+std::string ROAPMessage::toString()
 {
     nlohmann::ordered_json json;
 
-    switch(m.messageType)
+    switch(messageType)
     {
         case ROAPMessageType::Invaild: break;
         case ROAPMessageType::Offer:
@@ -106,11 +104,11 @@ std::string ROAPMessageToString(ROAPMessage& m)
         case ROAPMessageType::Error:
         case ROAPMessageType::Shutdown:
         {
-            json["messageType"] = messageTypeString[uint8_t(m.messageType)];
+            json["messageType"] = messageTypeString[uint8_t(messageType)];
             break;
         }
     }
-    switch(m.errorType)
+    switch(errorType)
     {
         case ROAPMessageErrorType::Invaild: break;
         case ROAPMessageErrorType::NoMatch:
@@ -120,91 +118,155 @@ std::string ROAPMessageToString(ROAPMessage& m)
         case ROAPMessageErrorType::DoubleConflict:
         case ROAPMessageErrorType::Failed:
         {
-            json["errorType"] = messageErrorTypeString[uint8_t(m.errorType)];
+            json["errorType"] = messageErrorTypeString[uint8_t(errorType)];
             break;
         } 
     }
-    if(!m.offererSessionId.empty())
+    if(!offererSessionId.empty())
     {
-        json["offererSessionId"] = m.offererSessionId;
+        json["offererSessionId"] = offererSessionId;
     }
-    if(!m.answererSessionId.empty())
+    if(!answererSessionId.empty())
     {
-        json["answererSessionId"] = m.answererSessionId;
+        json["answererSessionId"] = answererSessionId;
     }
-    if(m.seq > 0)
+    if(seq > 0)
     {
-        json["seq"] = m.seq;
+        json["seq"] = seq;
     }
-    if(!m.sdp.empty())
+    if(!sdp.empty())
     {
-        json["sdp"] = m.sdp;
+        json["sdp"] = sdp;
     }
-    return std::forward<std::string>(json.dump(2));
+    return std::forward<std::string>(json.dump(4));
 }
 
-UniqueID ROAPSession::uniqueIdGen;
+RandomID ROAPSession::randomIdGen;
 
 ROAPSession::ROAPSession():
-currentSeq(0),
-state(ROAPSessionState::Start)
+currentSeq(1),
+state(ROAPSessionState::Closed)
 {
 
 }
 // ROAPSession::~ROAPSession(){}
 
-std::string ROAPSession::createOffer(std::string sdp)
+void ROAPSession::reset()
+{
+    state = ROAPSessionState::Closed;
+    currentSeq = 1;
+    offererSessionId.clear();
+    answererSessionId.clear();
+}
+std::string ROAPSession::sendOffer(std::string sdp)
 {
     ROAPMessage packet;
-    offererSessionId=uniqueIdGen.uniqueIdgenerator();
-    currentSeq=1;
+    offererSessionId=randomIdGen.uniqueIdgenerator();
     packet.messageType = ROAPMessageType::Offer;
     packet.offererSessionId=offererSessionId;
     packet.seq=currentSeq;
     packet.sdp = sdp;
     state = ROAPSessionState::WaitAnswer;
-    return ROAPMessageToString(packet);
+    return packet.toString();
 }
 
-std::string ROAPSession::sendOffer(std::string sdp)
+bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
 {
-    ROAPMessage packet;
-    packet.messageType = ROAPMessageType::Offer;
-    packet.offererSessionId=offererSessionId;
-    packet.answererSessionId=answererSessionId;
-    currentSeq++;
-    packet.seq=currentSeq;
-    packet.sdp = sdp;
-    return ROAPMessageToString(packet);
-}
-
-void ROAPSession::process(ROAPMessage &in,ROAPMessage &out)
-{
+    if(in.seq != currentSeq)
+    {
+        out.messageType = ROAPMessageType::Error;
+        out.errorType = ROAPMessageErrorType::Failed;
+        out.offererSessionId = in.offererSessionId;
+        out.answererSessionId = in.answererSessionId;
+        out.seq = in.seq;
+        currentSeq = in.seq;
+        return true;
+    }
+    if(!(answererSessionId.empty() ||
+        answererSessionId.compare(in.answererSessionId) == 0))
+    {
+        out.messageType = ROAPMessageType::Error;
+        out.errorType = ROAPMessageErrorType::NoMatch;
+        out.offererSessionId = in.offererSessionId;
+        out.answererSessionId = out.answererSessionId;
+        out.seq = currentSeq;
+        return true;                  
+    }
     switch (state)
     {
+        case ROAPSessionState::Start:
+        {
+            if(in.messageType == ROAPMessageType::Shutdown)
+            {
+                state=ROAPSessionState::Closed;
+                out.messageType = ROAPMessageType::Ok;
+                out.offererSessionId = in.offererSessionId;
+                out.answererSessionId = in.answererSessionId;
+                out.seq = in.seq;
+                return true;
+            }
+            break;
+        }
         case ROAPSessionState::WaitAnswer:
         {
             if(in.messageType == ROAPMessageType::Answer)
             {
-                if(in.seq==1)
+                if(answererSessionId.empty())
                 {
-                    this->answererSessionId=in.answererSessionId;
+                    answererSessionId=in.answererSessionId;
                 }
-
-                if(this->answererSessionId.compare(in.answererSessionId)==0)
-                {
-                    this->sdp = in.sdp;
-                    state = ROAPSessionState::Completed;
-                    out.messageType = ROAPMessageType::Ok;
-                    out.offererSessionId = this->offererSessionId;
-                    out.answererSessionId = this->answererSessionId;
-                    out.seq = currentSeq;
-                }
+    
+                remoteSdp = in.sdp;
+                onRemoteSDP(in.sdp);
+                state = ROAPSessionState::Start;
+                currentSeq++;
+                out.messageType = ROAPMessageType::Ok;
+                out.offererSessionId = in.offererSessionId;
+                out.answererSessionId = out.answererSessionId;
+                out.seq = currentSeq;
+                return true;
+            }else if(in.messageType == ROAPMessageType::Error)
+            {
+                printf("ROAP Error: %d", in.errorType);
+                state = ROAPSessionState::Closed;
+                return false;              
+                
+            }else if(in.messageType == ROAPMessageType::Shutdown)
+            {
+                state=ROAPSessionState::Closed;
+                out.messageType = ROAPMessageType::Ok;
+                out.offererSessionId = in.offererSessionId;
+                out.answererSessionId = in.answererSessionId;
+                out.seq = in.seq;
+                return true;
             }
+            
             break;
         }
-        case ROAPSessionState::Completed:
+        case ROAPSessionState::WaitCompleted:
         {
+            if(in.messageType == ROAPMessageType::Ok)
+            {
+                currentSeq++;
+                state=ROAPSessionState::Start;
+                return false;
+            }else if(in.messageType == ROAPMessageType::Shutdown)
+            {
+                state=ROAPSessionState::Closed;
+                out.messageType = ROAPMessageType::Ok;
+                out.offererSessionId = in.offererSessionId;
+                out.answererSessionId = in.answererSessionId;
+                out.seq = in.seq;
+                return true;
+            }else
+            {
+                out.messageType = ROAPMessageType::Error;
+                out.errorType = ROAPMessageErrorType::Failed;
+                out.offererSessionId = in.offererSessionId;
+                out.answererSessionId = out.answererSessionId;
+                out.seq = currentSeq;                
+            }
+            
             break;
         }
         case ROAPSessionState::WaitForShutdown:
@@ -212,13 +274,37 @@ void ROAPSession::process(ROAPMessage &in,ROAPMessage &out)
             if(in.messageType == ROAPMessageType::Ok) 
             {
                 state=ROAPSessionState::Closed;
+                return false;
+            }else if(in.messageType == ROAPMessageType::Shutdown)
+            {
+                state=ROAPSessionState::Closed;
+                out.messageType = ROAPMessageType::Ok;
+                out.offererSessionId = in.offererSessionId;
+                out.answererSessionId = in.answererSessionId;
+                out.seq = in.seq;
+                return true;
+            }else
+            {
+                out.messageType = ROAPMessageType::Shutdown;
+                out.offererSessionId = in.offererSessionId;
+                out.answererSessionId = in.answererSessionId;
+                out.seq = in.seq;
+                return true;
             }
+            
             break;
         } 
         case ROAPSessionState::Closed:
         {
-            //do nothing
+            out.messageType = ROAPMessageType::Error;
+            out.errorType = ROAPMessageErrorType::NoMatch;
+            out.offererSessionId = in.offererSessionId;
+            out.answererSessionId = out.answererSessionId;
+            out.seq = currentSeq;  
+            return true;
+            
             break;
         }   
     }
+    return false;
 }

@@ -15,14 +15,14 @@
 #include <string>
 #include <random>
 
-class UniqueID
+class RandomID
 {
 private:
     std::random_device rd;
     std::mt19937 rng;
 public:
-    UniqueID();
-    ~UniqueID()=default;
+    RandomID();
+    ~RandomID()=default;
     std::string uniqueIdgenerator();
 };
 

@@ -9,7 +9,7 @@
  * 
  */
 
-#include "MessageHandler.hpp"
+#include "mqtt_connect.hpp"
 
 #include <stdexcept>
 
@@ -49,8 +49,8 @@ MQTTClient_message *msg)
 
 // }
 
-MqttConnect::MqttConnect(std::string url, std::string clientId, 
-std::string username, std::string password)
+MqttConnect::MqttConnect(const std::string& url, const std::string& clientId, 
+const std::string& username, const std::string& password)
 {
     int rc;
     MQTTClient_create(&client, url.c_str(), clientId.c_str(),

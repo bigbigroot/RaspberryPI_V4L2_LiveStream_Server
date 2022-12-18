@@ -17,9 +17,9 @@
 #include <string>
 #include <functional>
 
-#include "uid.hpp"
+#include "random_id.hpp"
 
-#define number_of(array)
+using OnRemoteCallback=std::function<void(std::string)>;
 
 enum class ROAPMessageType : uint8_t
 {
@@ -46,30 +46,24 @@ enum class ROAPSessionState : uint8_t
 {
     Start,
     WaitAnswer,
-    Completed,
+    WaitCompleted,
     WaitForShutdown,
     Closed
 };
 
-struct ROAPMessage
+class ROAPMessage
 {
-    ROAPMessageType messageType=ROAPMessageType::Invaild;
-    ROAPMessageErrorType errorType=ROAPMessageErrorType::Invaild;
-    std::string offererSessionId;
-    std::string answererSessionId;
-    uint32_t seq=0;
-    std::string sdp;
-    ROAPMessage()=default;
+    public:
+        ROAPMessageType messageType=ROAPMessageType::Invaild;
+        ROAPMessageErrorType errorType=ROAPMessageErrorType::Invaild;
+        std::string offererSessionId;
+        std::string answererSessionId;
+        uint32_t seq=0;
+        std::string sdp;
+        ROAPMessage()=default;
+        void parser(std::string data);
+        std::string toString();
 };
-
-ROAPMessage ROAPMessageParser(std::string data);
-/**
- * @brief convert to JSON formate string
- * 
- * @param m 
- * @return std::string 
- */
-std::string ROAPMessageToString(ROAPMessage& m);
 
 
 class ROAPSession
@@ -77,18 +71,20 @@ class ROAPSession
     private:
         std::string offererSessionId;
         std::string answererSessionId;
+        OnRemoteCallback onRemoteSDP=nullptr;
         uint32_t currentSeq;
         ROAPSessionState state;
-        std::string sdp;
-        static UniqueID uniqueIdGen;
+        std::string remoteSdp;
+        std::string localSdp;
+        static RandomID randomIdGen;
     public:
         ROAPSession();
         ~ROAPSession()=default;
-        // std::function<int(std::string)> sendMessage=nullptr;
-        std::string createOffer(std::string sdp);
+        void setRemoteSDPCallback(OnRemoteCallback&& callback){onRemoteSDP=callback;}
         std::string sendOffer(std::string sdp);
-        void process(ROAPMessage &in,ROAPMessage &out);
-        std::string& getRemoteSdp(){return sdp;}
+        bool processMessage(ROAPMessage &in,ROAPMessage &out);
+        std::string& getRemoteSdp(){return remoteSdp;}
+        void reset();
 };
 
 

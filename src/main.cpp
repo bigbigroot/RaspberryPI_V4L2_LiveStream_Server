@@ -25,8 +25,8 @@
 #include <nlohmann/json.hpp>
 
 #include "utility.h"
-#include "ROAProtocol.hpp"
-#include "MessageHandler.hpp"
+#include "roaprotocol.hpp"
+#include "mqtt_connect.hpp"
 
 bool awaitExit = false;
 
@@ -47,6 +47,8 @@ int main(int argc, char *argv[]) {
     std::unique_ptr<MqttConnect> mqttConn;
 
     signal(SIGINT, signal_handler);
+    
+    rtcConfig.iceServers.emplace_back(rtc::IceServer("stun:192.168.5.10:3478"));
 
     configFile = fopen("config.json", "r");
     if(configFile == nullptr)
@@ -60,36 +62,50 @@ int main(int argc, char *argv[]) {
         printf("LibDataChannel Debug: %s\n", msg.c_str());
     });
     
+    session.setRemoteSDPCallback([&pc](std::string sdp){
+        pc->setRemoteDescription(rtc::Description(sdp, "answer"));
+    });
     
     try
     {
         auto configJson = nlohmann::json::parse(configFile);
-        std::string mqttURL = configJson["mqtt"]["url"].get<std::string>();
-        std::string mqttClientId = configJson["mqtt"]["clientid"].get<std::string>();
-        std::string mqttUsername = configJson["mqtt"]["username"].get<std::string>();
-        std::string mqttPassword = configJson["mqtt"]["password"].get<std::string>();
+        auto iceServerUrls = configJson["iceServer"]["urls"];
+        std::string&& mqttURL = configJson["mqtt"]["url"].get<std::string>();
+        std::string&& mqttClientId = configJson["mqtt"]["clientid"].get<std::string>();
+        std::string&& mqttUsername = configJson["mqtt"]["username"].get<std::string>();
+        std::string&& mqttPassword = configJson["mqtt"]["password"].get<std::string>();
 
-        mqttConn = std::make_unique<MqttConnect>(mqttURL, mqttClientId, mqttUsername, mqttPassword);
+        for(auto item : iceServerUrls)
+        {
+            std::string&& url = item.get<std::string>();
+            rtcConfig.iceServers.emplace_back(rtc::IceServer(url));
+        }
+        
+        mqttConn = std::make_unique<MqttConnect>(
+            mqttURL, mqttClientId,mqttUsername, mqttPassword);
         mqttConn->subscribeTopic("webrtc/notify/camera");
         mqttConn->subscribeTopic("webrtc/roap/camera");
+
         mqttConn->registeTopicHandle("webrtc/notify/camera", 
         [&mqttConn, &pc, &session](std::string topic, std::string message)
         {
+            session.reset();
             auto offerSdp = pc->localDescription().value().generateSdp();
-            mqttConn->publishMessage("webrtc/roap/app", session.createOffer(offerSdp));
+            mqttConn->publishMessage("webrtc/roap/app", session.sendOffer(offerSdp));
 
         });
 
         mqttConn->registeTopicHandle("webrtc/roap/camera", 
         [&mqttConn, &pc, &session](std::string topic, std::string message)
         {
-            ROAPMessage out;
-            auto in = ROAPMessageParser(message);
-            session.process(in, out);
-            mqttConn->publishMessage("webrtc/roap/app", ROAPMessageToString(out));
+            ROAPMessage in,out;
+            in.parser(message);
+            if(session.processMessage(in, out))
+            {                    
+                mqttConn->publishMessage("webrtc/roap/app", out.toString());
+            }
         });
 
-        rtcConfig.iceServers.emplace_back(rtc::IceServer("stun:192.168.5.10:3478"));
 
         rtc::Preload();
 
@@ -170,14 +186,17 @@ int main(int argc, char *argv[]) {
 		media.addSSRC(ssrc, "video-send");
 		auto track = pc->addTrack(media);
         
-        pc->setLocalDescription();
+        pc->setLocalDescription(rtc::Description::Type::Offer);
     }catch(const std::exception& e)
     {
         printf("%s\n", e.what());
         return EXIT_FAILURE;
     }
 
-    while(!awaitExit);
+    while(!awaitExit)
+    {
+        getchar();
+    }
     //... finally ...
     rtc::Cleanup();
 

@@ -14,9 +14,9 @@ LDFLAGS = -pthread
 
 SRC = \
 src/capture.cpp \
-src/ROAProtocol.cpp \
-src/MessageHandler.cpp \
-src/uid.cpp \
+src/roaprotocol.cpp \
+src/mqtt_connect.cpp \
+src/random_id.cpp \
 src/main.cpp 
 
 
