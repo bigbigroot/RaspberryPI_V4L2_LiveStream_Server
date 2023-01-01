@@ -24,8 +24,9 @@
 #include <rtc/rtc.hpp>
 #include <nlohmann/json.hpp>
 
+#include "capture.hpp"
 #include "utility.h"
-#include "roaprotocol.hpp"
+#include "session.hpp"
 #include "mqtt_connect.hpp"
 
 bool awaitExit = false;
@@ -41,10 +42,11 @@ void signal_handler(int sig){
  */
 int main(int argc, char *argv[]) {
     FILE *configFile;
-    ROAPSession session;
     rtc::Configuration rtcConfig;
-    std::unique_ptr<rtc::PeerConnection> pc;
-    std::unique_ptr<MqttConnect> mqttConn;
+    std::shared_ptr<MqttConnect> mqttConn;
+    std::shared_ptr<VideoCapture> camera;
+    std::shared_ptr<H264VideoStream> videoStream;
+    std::unique_ptr<RTCPeerSessionManager> peers;
 
     signal(SIGINT, signal_handler);
     
@@ -62,12 +64,11 @@ int main(int argc, char *argv[]) {
         printf("LibDataChannel Debug: %s\n", msg.c_str());
     });
     
-    session.setRemoteSDPCallback([&pc](std::string sdp){
-        pc->setRemoteDescription(rtc::Description(sdp, "answer"));
-    });
     
     try
     {
+        rtc::Preload();
+
         auto configJson = nlohmann::json::parse(configFile);
         auto iceServerUrls = configJson["iceServer"]["urls"];
         std::string&& mqttURL = configJson["mqtt"]["url"].get<std::string>();
@@ -81,125 +82,49 @@ int main(int argc, char *argv[]) {
             rtcConfig.iceServers.emplace_back(rtc::IceServer(url));
         }
         
-        mqttConn = std::make_unique<MqttConnect>(
+        camera = std::make_shared<VideoCapture>("/dev/video0");
+
+        camera->setWindow(VideoCapture::WindowsSize::pixel_720p);
+        camera->openDevice();
+        camera->setVideoFormat();
+        camera->onSample = [&videoStream](void *data, size_t len)
+        {
+            videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len);
+        };
+
+        mqttConn = std::make_shared<MqttConnect>(
             mqttURL, mqttClientId,mqttUsername, mqttPassword);
+        videoStream = std::make_shared<H264VideoStream>();
+        peers = std::make_unique<RTCPeerSessionManager>(std::move(rtcConfig), mqttConn, videoStream);
+        
         mqttConn->subscribeTopic("webrtc/notify/camera");
         mqttConn->subscribeTopic("webrtc/roap/camera");
 
         mqttConn->registeTopicHandle("webrtc/notify/camera", 
-        [&mqttConn, &pc, &session](std::string topic, std::string message)
+        [&peers](std::string topic, std::string message)
         {
-            session.reset();
-            auto offerSdp = pc->localDescription().value().generateSdp();
-            mqttConn->publishMessage("webrtc/roap/app", session.sendOffer(offerSdp));
-
+            peers->createRTCPeerSession();
         });
 
         mqttConn->registeTopicHandle("webrtc/roap/camera", 
-        [&mqttConn, &pc, &session](std::string topic, std::string message)
+        [&peers](std::string topic, std::string message)
         {
-            ROAPMessage in,out;
-            in.parser(message);
-            if(session.processMessage(in, out))
-            {                    
-                mqttConn->publishMessage("webrtc/roap/app", out.toString());
-            }
+            peers->processMessage(message);
         });
 
-
-        rtc::Preload();
-
-        pc = std::make_unique<rtc::PeerConnection>(rtcConfig);
-
-        pc->onLocalDescription([](rtc::Description sdp)
+        while(!awaitExit)
         {
-            // Send the SDP to the remote peer
-            printf(std::string(sdp).c_str());
-        });
-
-        pc->onGatheringStateChange([](rtc::PeerConnection::GatheringState state)
-        {
-            switch (state)
-            {
-                case rtc::PeerConnection::GatheringState::New:
-                {
-                    printf("gather new\n");
-                    break;
-                }
-                case rtc::PeerConnection::GatheringState::InProgress:
-                {
-                    printf("gather inprogress\n");
-                    break;
-                }
-                case rtc::PeerConnection::GatheringState::Complete:
-                {
-                    printf("gather complete\n");
-                    break;
-                }                
-            }
-        });
-
-        pc->onLocalCandidate([](rtc::Candidate candidate)
-        {
-            printf("loacl candidate: %s.\n", candidate.candidate().c_str());
-        });
-
-        pc->onStateChange([](rtc::PeerConnection::State state) 
-        {
-            switch (state)
-            {
-                case rtc::PeerConnection::State::New:
-                {
-                    printf("rtc new\n");
-                    break;
-                }
-                case rtc::PeerConnection::State::Connecting:
-                {
-                    printf("rtc Connecting\n");
-                    break;
-                }
-                case rtc::PeerConnection::State::Connected:
-                {
-                    printf("rtc connected\n");
-                    break;
-                }   
-                case rtc::PeerConnection::State::Disconnected:
-                {
-                    printf("rtc disconnected\n");
-                    break;
-                }   
-                case rtc::PeerConnection::State::Failed:
-                {
-                    printf("rtc failed\n");
-                    break;
-                }  
-                case rtc::PeerConnection::State::Closed:
-                {
-                    printf("rtc closed\n");
-                    break;
-                }               
-            }
-        });
-		const rtc::SSRC ssrc = 42;
-		rtc::Description::Video media("video", rtc::Description::Direction::SendOnly);
-		media.addH264Codec(96); // Must match the payload type of the external h264 RTP stream
-		media.addSSRC(ssrc, "video-send");
-		auto track = pc->addTrack(media);
-        
-        pc->setLocalDescription(rtc::Description::Type::Offer);
+            camera->handleLoop();
+        }
+        //... finally ...
+        rtc::Cleanup();
     }catch(const std::exception& e)
     {
         printf("%s\n", e.what());
         return EXIT_FAILURE;
     }
 
-    while(!awaitExit)
-    {
-        getchar();
-    }
-    //... finally ...
-    rtc::Cleanup();
-
+    camera->closeDevice();
 
     return 0;
 }

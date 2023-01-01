@@ -17,12 +17,15 @@ src/capture.cpp \
 src/roaprotocol.cpp \
 src/mqtt_connect.cpp \
 src/random_id.cpp \
-src/main.cpp 
+src/session.cpp \
+src/streamer.cpp \
+src/main.cpp
 
 
 INC = \
 -I/usr/local/include \
 -I/usr//include/x86_64-linux-gnu
+
 
 LIBS =  -L/usr/local/lib \
 -ldatachannel \

@@ -50,7 +50,7 @@ MQTTClient_message *msg)
 // }
 
 MqttConnect::MqttConnect(const std::string& url, const std::string& clientId, 
-const std::string& username, const std::string& password)
+                         const std::string& username, const std::string& password)
 {
     int rc;
     MQTTClient_create(&client, url.c_str(), clientId.c_str(),
@@ -59,7 +59,8 @@ const std::string& username, const std::string& password)
     connOpt.username = username.c_str();
     connOpt.password = password.c_str();
 
-    MQTTClient_setCallbacks(client, this, connectLostHandle, messageArrivedHandle, nullptr);
+    MQTTClient_setCallbacks(client, this, connectLostHandle,
+                            messageArrivedHandle, nullptr);
 
     if ((rc = MQTTClient_connect(client, &connOpt)) != MQTTCLIENT_SUCCESS)
     {
@@ -79,7 +80,7 @@ void MqttConnect::registeTopicHandle(std::string topic, onMessageCallback callba
     allTopicHandles.insert_or_assign(topic, callback);
 }
 
-int MqttConnect::publishMessage(std::string topic, std::string message)
+int MqttConnect::publishMessage(std::string topic, std::string message) noexcept
 {
     MQTTClient_message mqttMsg(MQTTClient_message_initializer);
     mqttMsg.payload = (void *)message.c_str();
@@ -87,12 +88,12 @@ int MqttConnect::publishMessage(std::string topic, std::string message)
     return MQTTClient_publishMessage(client, topic.c_str(), &mqttMsg, nullptr);
 }
 
-int MqttConnect::subscribeTopic(std::string topic)
+int MqttConnect::subscribeTopic(std::string topic) noexcept
 {
     return MQTTClient_subscribe(client, topic.c_str(), 0);
 }
 
-int MqttConnect::unsubscribeTopic(std::string topic)
+int MqttConnect::unsubscribeTopic(std::string topic) noexcept
 {
     return MQTTClient_unsubscribe(client, topic.c_str());
 }

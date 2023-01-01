@@ -13,13 +13,15 @@
 #define __PROTOCOL_H
 
 #include <stdint.h>
-#include <variant>
+#include <map>
+#include <memory>
 #include <string>
 #include <functional>
 
+#include "mqtt_connect.hpp"
 #include "random_id.hpp"
 
-using OnRemoteCallback=std::function<void(std::string)>;
+
 
 enum class ROAPMessageType : uint8_t
 {
@@ -47,6 +49,7 @@ enum class ROAPSessionState : uint8_t
     Start,
     WaitAnswer,
     WaitCompleted,
+    Completed,
     WaitForShutdown,
     Closed
 };
@@ -65,26 +68,40 @@ class ROAPMessage
         std::string toString();
 };
 
-
 class ROAPSession
 {
-    private:
-        std::string offererSessionId;
-        std::string answererSessionId;
-        OnRemoteCallback onRemoteSDP=nullptr;
+    protected:
+        std::string myId;
+        std::string yourId;
         uint32_t currentSeq;
         ROAPSessionState state;
         std::string remoteSdp;
         std::string localSdp;
-        static RandomID randomIdGen;
+
     public:
-        ROAPSession();
+        ROAPSession(const std::string& id);
+        ROAPSession(ROAPSession&& session);
         ~ROAPSession()=default;
-        void setRemoteSDPCallback(OnRemoteCallback&& callback){onRemoteSDP=callback;}
-        std::string sendOffer(std::string sdp);
-        bool processMessage(ROAPMessage &in,ROAPMessage &out);
+};
+
+
+class OfferSession: public ROAPSession
+{
+    private:
+        std::shared_ptr<MqttConnect> mqttConn;
+    public:
+        OfferSession(const std::string& id, const std::shared_ptr<MqttConnect>& conn);
+        OfferSession(OfferSession&& session);
+        ~OfferSession()=default;
+        std::function<void(std::string sdp)> onRemoteSDP=nullptr;
+        std::function<void()> onClose=nullptr;
+        bool isclosed()  noexcept {return state == ROAPSessionState::Closed;}
+        std::string getId()  noexcept {return myId;}
+        void sendOffer(std::string sdp);
+        void processMessage(ROAPMessage &in);
         std::string& getRemoteSdp(){return remoteSdp;}
-        void reset();
+        void close();
+        // void reset();
 };
 
 

@@ -16,7 +16,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <functional>
 #include <string>
+#include <queue>
 
 #define VIDEO_DEBUG
 #define ENUM_CTRL 0
@@ -32,79 +34,103 @@
     #define V4L2_MESSAGE(...) do{}while (0)
 #endif
 
-enum class WindowsSize{
-    pixel_720p,
-    pixel_1080p,
-    pixel_5MP,
-};
+constexpr size_t videoBuffersNum = 5;
 
 class VideoCapture
 {
-private:
-    int fd;
-    int imgSize=0;
-    std::string deviceName;
-    bool isOpen=false;
-    struct{
-        uint32_t height=0;
-        uint32_t width=0;
-    }windows;
+    private:
+        int fd;
+        int imgSize;
+        std::string deviceName;
+        bool isOpened;
+        struct{
+            uint32_t height;
+            uint32_t width;
+        }windows;
 
-#if(ENUM_CTRL > 0)
-    void enumerateMenu(__u32 id, __u32 min_i, __u32 max_i);
-#endif
-public:
-    VideoCapture()=delete;
-    VideoCapture(std::string name);
-    ~VideoCapture();
+    #if(ENUM_CTRL > 0)
+        void enumerateMenu(__u32 id, __u32 min_i, __u32 max_i);
+    #endif
+        struct buffer
+        {
+            void *start;
+            size_t length;
+        };
+
+        std::deque<buffer> videoBuffer;
         
-    /**
-     * @brief open device by its name
-     * 
-     * @param dev_name device name for exmaple /dev/videoX
-     * @return int if 0 sucess
-     */
-    void openDevice(void);
-    /**
-     * @brief close devide
-     * 
-     */
-    void closeDevice(void);
-    /**
-     * @brief check the device is a video capture device (camera) and then print the 
-     * info of the driver 
-     * 
-     */
-    void checkDevCap(void);
+    public:
+        enum class WindowsSize{
+            pixel_720p,
+            pixel_1080p,
+            pixel_5MP,
+        };
+        
+        VideoCapture()=delete;
+        VideoCapture(std::string name);
+        ~VideoCapture();
+        
+        std::function<void(void *, size_t)> onSample = nullptr;
+        /**
+         * @brief open device by its name
+         * 
+         * @param dev_name device name for exmaple /dev/videoX
+         * @return int if 0 sucess
+         */
+        void openDevice(void);
+        /**
+         * @brief close devide
+         * 
+         */
+        void closeDevice(void);
+        /**
+         * @brief check the device is a video capture device (camera) and then print the 
+         * info of the driver 
+         * 
+         */
+        void checkDevCap(void);
 
-    /**
-     * @brief check which control will be supported  by device. 
-     * 
-     */
-    void checkAllContol(void);
-    /**
-     * @brief check which image format will be supported  by device. 
-     * 
-     */
-    void checkVideoFormat(void);
+        /**
+         * @brief check which control will be supported  by device. 
+         * 
+         */
+        void checkAllContol(void);
+        /**
+         * @brief check which image format will be supported  by device. 
+         * 
+         */
+        void checkVideoFormat(void);
 
-    /**
-     * @brief set H.264's video stream format 
-     * 
-     */
-    void setVideoFormat(void);
-    /**
-     * @brief 
-     * 
-     * @param buf 
-     * @param len 
-     * @return ssize_t 
-     */
-    int readVideoFrame(uint8_t *buf, size_t len);
+        /**
+         * @brief set H.264's video stream format 
+         * 
+         */
+        void setVideoFormat(void);
+        /**
+         * @brief read a picture
+         * 
+         * @param buf 
+         * @param len 
+         * @return ssize_t 
+         */
+        int readVideoFrame(uint8_t *buf, size_t len);
+        /**
+         * @brief 
+         * 
+         */
+        void initMmap(void);
 
-    size_t getImageSize(){return imgSize;}
-    
-    void setWindow(WindowsSize win);
+
+        void handleLoop();
+
+        size_t getImageSize(){return imgSize;}
+
+        /**
+         * @brief Set the resolution of the Video
+         * 
+         * @param win 
+         */
+        void setWindow(WindowsSize win);
 };
 
 #endif /* __CAPTURE_H */

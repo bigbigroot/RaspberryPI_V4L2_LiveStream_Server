@@ -15,15 +15,15 @@
 #include <string>
 #include <random>
 
-class RandomID
+class RandomIdGenerator
 {
 private:
     std::random_device rd;
     std::mt19937 rng;
 public:
-    RandomID();
-    ~RandomID()=default;
-    std::string uniqueIdgenerator();
+    RandomIdGenerator();
+    ~RandomIdGenerator()=default;
+    std::string allocateAUniqueId();
 };
 
 

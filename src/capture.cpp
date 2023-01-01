@@ -48,15 +48,13 @@ void VideoCapture::enumerateMenu(__u32 id, __u32 min_i, __u32 max_i){
 #endif
 
 VideoCapture::VideoCapture(std::string name)
-:isOpen(false),
-imgSize(0),
-windows{0,0},
-deviceName{name}
+:fd(-1), imgSize(0), deviceName{name},
+isOpened(false), windows{0,0}
 {
 }
 
 VideoCapture::~VideoCapture(){
-    if(isOpen){
+    if(isOpened){
         closeDevice();
     }    
 }
@@ -70,7 +68,7 @@ void VideoCapture::openDevice(void){
     struct stat st;
 
     if (-1 == stat(deviceName.c_str(), &st)) {
-        isOpen = false;
+        isOpened = false;
         ERROR_MESSAGE("Cannot identify '%s': %d, %s\n",
                         deviceName.c_str(), errno, strerror(errno));
         throw std::system_error(errno, std::generic_category(), 
@@ -78,31 +76,44 @@ void VideoCapture::openDevice(void){
     }
 
     if (!S_ISCHR(st.st_mode)) {
-        isOpen = false;
+        isOpened = false;
         ERROR_MESSAGE("%s is no devicen", deviceName.c_str());
         throw std::system_error(errno, std::generic_category(), 
             deviceName+" is no devicen");
     }
     fd = open(deviceName.c_str(), O_RDWR);
     if(fd == -1){
-        isOpen = false;
+        isOpened = false;
         ERROR_MESSAGE("video info: cannot open device! (%s (%d))\n", 
             strerror(errno), errno);
         throw std::system_error(errno, std::generic_category(), 
             "cannot open device!"+ deviceName);
     }
-    isOpen = true;
+    isOpened = true;
 }
 /**
  * @brief close devide
  * 
  */
 void VideoCapture::closeDevice(void){
+    if(!isOpened) return;
+    
+    for(auto i: videoBuffer)
+    {
+        if(munmap(i.start, i.length) == -1)
+        {
+            ERROR_MESSAGE("munmap (%s(%d)).",
+                strerror(errno), errno);
+            throw std::system_error(errno, std::generic_category(), 
+                "munmap");
+        }
+    }
+
     if(close(fd)==-1){
         ERROR_MESSAGE("close device error! (%s (%d))\n", 
             strerror(errno), errno);
     }
-    isOpen = false;
+    isOpened = false;
     fd= -1;
 }
 /**
@@ -112,7 +123,7 @@ void VideoCapture::closeDevice(void){
  */
 void VideoCapture::checkDevCap(void){
     struct v4l2_capability video_cap;
-    if(!isOpen){
+    if(!isOpened){
         ERROR_MESSAGE("device(%s) has not been opened.",
             deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
@@ -151,7 +162,7 @@ void VideoCapture::checkDevCap(void){
 void VideoCapture::checkAllContol(){    
     struct v4l2_queryctrl  cam_ctrl_info;
     
-    if(!isOpen){
+    if(!isOpened){
         ERROR_MESSAGE("device(%s) has not opened.",
             deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
@@ -189,7 +200,7 @@ void VideoCapture::checkAllContol(){
 void VideoCapture::checkVideoFormat(void){
     struct v4l2_fmtdesc video_fmtdesc;
     
-    if(!isOpen){
+    if(!isOpened){
         ERROR_MESSAGE("device(%s) has not opened.",
             deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
@@ -220,7 +231,7 @@ void VideoCapture::checkVideoFormat(void){
 void VideoCapture::setVideoFormat(void){
     struct v4l2_format video_fmt;
     
-    if(!isOpen){
+    if(!isOpened){
         ERROR_MESSAGE("device(%s) has not opened.",
             deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
@@ -267,7 +278,7 @@ void VideoCapture::setVideoFormat(void){
 }
 
 int VideoCapture::readVideoFrame(uint8_t *buf, size_t len){
-    if(!isOpen){
+    if(!isOpened){
         ERROR_MESSAGE("device(%s) has not opened.",
             deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
@@ -305,6 +316,97 @@ void VideoCapture::setWindow(WindowsSize win){
             windows.width = 1944;
             break;
         }    
+    }
+
+}
+
+void VideoCapture::initMmap()
+{
+    struct v4l2_requestbuffers reqbufs;
+
+    if(!isOpened){
+        ERROR_MESSAGE("device(%s) has not opened.",
+            deviceName.c_str());
+        throw std::runtime_error("device has not been opened.");
+    }
+
+    memset(&reqbufs, 0, sizeof(reqbufs));
+    
+    reqbufs.count = videoBuffersNum;
+    reqbufs.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    reqbufs.memory = V4L2_MEMORY_MMAP;
+    
+    if(ioctl(fd, VIDIOC_REQBUFS, &reqbufs) ==  -1)
+    {        
+        ERROR_MESSAGE("VIDIOC_REQBUFS (%s(%d)).",
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_REQBUFS");
+    }
+
+    if (reqbufs.count < 1)
+    {        
+        ERROR_MESSAGE("%s have no enough buffer. (%s(%d)).", deviceName.c_str(),
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            deviceName + " have no enough buffer.");
+    }
+
+
+    for(size_t i = 0; i < reqbufs.count; i++)
+    {
+        struct v4l2_buffer buf;
+        size_t len;
+        void *start;
+
+        memset(&buf, 0, sizeof(buf));
+
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index = i;
+
+        if(ioctl(fd, VIDIOC_QUERYBUF, &buf) == -1)
+        {
+            ERROR_MESSAGE("VIDIOC_QUERYBUF (%s(%d)).",
+                strerror(errno), errno);
+            throw std::system_error(errno, std::generic_category(), 
+                "VIDIOC_QUERYBUF");
+        }
+
+        len = buf.length;
+        start = mmap(NULL, len, PROT_READ|PROT_WRITE,
+                     MAP_SHARED, fd, buf.m.offset);
+
+        if(start == MAP_FAILED)
+        {
+            ERROR_MESSAGE("mmap (%s(%d)).",
+                strerror(errno), errno);
+            throw std::system_error(errno, std::generic_category(), 
+                "mmap");
+        }
+
+        videoBuffer.push_back({.start = start, .length = len});
+    }
+}
+
+void VideoCapture::handleLoop()
+{
+    if(videoBuffer.empty())
+    {
+        initMmap();
+    }
+
+    for(auto i = videoBuffer.front(); !videoBuffer.empty();
+        videoBuffer.pop_front())
+    {
+        onSample(i.start, i.length);
+        if(munmap(i.start, i.length) == -1)
+        {
+            ERROR_MESSAGE("munmap (%s(%d)).",
+                strerror(errno), errno);
+            throw std::system_error(errno, std::generic_category(), 
+                "munmap");
+        }
     }
 
 }

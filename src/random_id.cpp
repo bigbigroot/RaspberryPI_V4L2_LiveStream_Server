@@ -30,12 +30,12 @@ std::array<char, 64> constexpr base64Table
 };
 
 
-RandomID::RandomID()
+RandomIdGenerator::RandomIdGenerator()
 {
     rng.seed(rd());
 }
 
-std::string RandomID::uniqueIdgenerator()
+std::string RandomIdGenerator::allocateAUniqueId()
 {
     constexpr int idSize = 16;
     char id[idSize];

@@ -10,10 +10,12 @@
  */
 
 #include "roaprotocol.hpp"
+#include "utility.h"
 
 #include <stdexcept>
 #include <array>
 #include <nlohmann/json.hpp>
+
 
 const std::string messageTypeString[] =
 {
@@ -141,37 +143,47 @@ std::string ROAPMessage::toString()
     return std::forward<std::string>(json.dump(4));
 }
 
-RandomID ROAPSession::randomIdGen;
+ROAPSession::ROAPSession(const std::string& id):
+myId(id), currentSeq(1),
+state(ROAPSessionState::Start)
+{}
 
-ROAPSession::ROAPSession():
-currentSeq(1),
-state(ROAPSessionState::Closed)
-{
+ROAPSession::ROAPSession(ROAPSession&& session):
+myId(std::move(session.myId)),
+yourId(std::move(session.yourId)),
+currentSeq(session.currentSeq), state(session.state),
+remoteSdp(std::move(session.remoteSdp)),
+localSdp(std::move(session.localSdp))
+{}
 
-}
-// ROAPSession::~ROAPSession(){}
+OfferSession::OfferSession(
+    const std::string& id, const std::shared_ptr<MqttConnect>& conn):
+ROAPSession(id), mqttConn(conn)
+{}
 
-void ROAPSession::reset()
-{
-    state = ROAPSessionState::Closed;
-    currentSeq = 1;
-    offererSessionId.clear();
-    answererSessionId.clear();
-}
-std::string ROAPSession::sendOffer(std::string sdp)
+OfferSession::OfferSession(OfferSession&& session):
+ROAPSession(std::move(session)), mqttConn(std::move(session.mqttConn))
+{}
+
+void OfferSession::sendOffer(std::string sdp)
 {
     ROAPMessage packet;
-    offererSessionId=randomIdGen.uniqueIdgenerator();
+    if(state == ROAPSessionState::Closed)
+    {
+        throw std::logic_error("the offer is closed");
+    }
     packet.messageType = ROAPMessageType::Offer;
-    packet.offererSessionId=offererSessionId;
+    packet.offererSessionId = myId;
     packet.seq=currentSeq;
     packet.sdp = sdp;
     state = ROAPSessionState::WaitAnswer;
-    return packet.toString();
+    mqttConn->publishMessage(SEND_TOPIC, packet.toString());
 }
 
-bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
+void OfferSession::processMessage(ROAPMessage &in)
 {
+    ROAPMessage out;
+
     if(in.seq != currentSeq)
     {
         out.messageType = ROAPMessageType::Error;
@@ -179,18 +191,19 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
         out.offererSessionId = in.offererSessionId;
         out.answererSessionId = in.answererSessionId;
         out.seq = in.seq;
-        currentSeq = in.seq;
-        return true;
+
+        mqttConn->publishMessage(SEND_TOPIC, out.toString());
     }
-    if(!(answererSessionId.empty() ||
-        answererSessionId.compare(in.answererSessionId) == 0))
+    if(!(yourId.empty() ||
+        yourId.compare(in.answererSessionId) == 0))
     {
         out.messageType = ROAPMessageType::Error;
         out.errorType = ROAPMessageErrorType::NoMatch;
         out.offererSessionId = in.offererSessionId;
-        out.answererSessionId = out.answererSessionId;
+        out.answererSessionId = in.answererSessionId;
         out.seq = currentSeq;
-        return true;                  
+
+        mqttConn->publishMessage(SEND_TOPIC, out.toString());           
     }
     switch (state)
     {
@@ -203,7 +216,8 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
                 out.offererSessionId = in.offererSessionId;
                 out.answererSessionId = in.answererSessionId;
                 out.seq = in.seq;
-                return true;
+                mqttConn->publishMessage(SEND_TOPIC, out.toString());
+                onClose();
             }
             break;
         }
@@ -211,25 +225,24 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
         {
             if(in.messageType == ROAPMessageType::Answer)
             {
-                if(answererSessionId.empty())
+                if(yourId.empty())
                 {
-                    answererSessionId=in.answererSessionId;
+                    yourId=in.answererSessionId;
                 }
     
                 remoteSdp = in.sdp;
                 onRemoteSDP(in.sdp);
-                state = ROAPSessionState::Start;
-                currentSeq++;
+                state = ROAPSessionState::Completed;
                 out.messageType = ROAPMessageType::Ok;
                 out.offererSessionId = in.offererSessionId;
                 out.answererSessionId = out.answererSessionId;
                 out.seq = currentSeq;
-                return true;
+                currentSeq++;
+                mqttConn->publishMessage(SEND_TOPIC, out.toString());
             }else if(in.messageType == ROAPMessageType::Error)
             {
-                printf("ROAP Error: %d", in.errorType);
-                state = ROAPSessionState::Closed;
-                return false;              
+                ERROR_MESSAGE("ROAP Error: %x", uint8_t(in.errorType));
+                state = ROAPSessionState::Closed;     
                 
             }else if(in.messageType == ROAPMessageType::Shutdown)
             {
@@ -238,7 +251,7 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
                 out.offererSessionId = in.offererSessionId;
                 out.answererSessionId = in.answererSessionId;
                 out.seq = in.seq;
-                return true;
+                mqttConn->publishMessage(SEND_TOPIC, out.toString());
             }
             
             break;
@@ -248,8 +261,7 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
             if(in.messageType == ROAPMessageType::Ok)
             {
                 currentSeq++;
-                state=ROAPSessionState::Start;
-                return false;
+                state=ROAPSessionState::Completed;
             }else if(in.messageType == ROAPMessageType::Shutdown)
             {
                 state=ROAPSessionState::Closed;
@@ -257,16 +269,14 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
                 out.offererSessionId = in.offererSessionId;
                 out.answererSessionId = in.answererSessionId;
                 out.seq = in.seq;
-                return true;
-            }else
-            {
-                out.messageType = ROAPMessageType::Error;
-                out.errorType = ROAPMessageErrorType::Failed;
-                out.offererSessionId = in.offererSessionId;
-                out.answererSessionId = out.answererSessionId;
-                out.seq = currentSeq;                
+                mqttConn->publishMessage(SEND_TOPIC, out.toString());
+                onClose();
             }
             
+            break;
+        }
+        case ROAPSessionState::Completed:
+        {
             break;
         }
         case ROAPSessionState::WaitForShutdown:
@@ -274,7 +284,7 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
             if(in.messageType == ROAPMessageType::Ok) 
             {
                 state=ROAPSessionState::Closed;
-                return false;
+                onClose();
             }else if(in.messageType == ROAPMessageType::Shutdown)
             {
                 state=ROAPSessionState::Closed;
@@ -282,14 +292,16 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
                 out.offererSessionId = in.offererSessionId;
                 out.answererSessionId = in.answererSessionId;
                 out.seq = in.seq;
-                return true;
+                mqttConn->publishMessage(SEND_TOPIC, out.toString());
+                
+                onClose();                
             }else
             {
                 out.messageType = ROAPMessageType::Shutdown;
                 out.offererSessionId = in.offererSessionId;
                 out.answererSessionId = in.answererSessionId;
                 out.seq = in.seq;
-                return true;
+                mqttConn->publishMessage(SEND_TOPIC, out.toString());
             }
             
             break;
@@ -301,10 +313,26 @@ bool ROAPSession::processMessage(ROAPMessage &in,ROAPMessage &out)
             out.offererSessionId = in.offererSessionId;
             out.answererSessionId = out.answererSessionId;
             out.seq = currentSeq;  
-            return true;
+            mqttConn->publishMessage(SEND_TOPIC, out.toString());
             
             break;
         }   
     }
-    return false;
+}
+
+
+void OfferSession::close()
+{
+    if(state == ROAPSessionState::Closed)
+        return;
+
+    state = ROAPSessionState::WaitForShutdown;
+    
+    ROAPMessage packet;
+    packet.messageType = ROAPMessageType::Shutdown;
+    packet.offererSessionId = myId;
+    packet.answererSessionId = yourId;
+    packet.seq = currentSeq;
+    
+    mqttConn->publishMessage(SEND_TOPIC, packet.toString());
 }
