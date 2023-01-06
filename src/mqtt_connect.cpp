@@ -66,6 +66,8 @@ MqttConnect::MqttConnect(const std::string& url, const std::string& clientId,
     {
         throw std::runtime_error("Failed to connect, return code "+ std::to_string(rc));
     }
+
+    MQTT_LOG("MQTT is connected to %s", url.c_str());
 }
 
 MqttConnect::~MqttConnect()

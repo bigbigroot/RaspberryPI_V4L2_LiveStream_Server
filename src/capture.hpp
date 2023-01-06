@@ -34,7 +34,6 @@
     #define V4L2_MESSAGE(...) do{}while (0)
 #endif
 
-constexpr size_t videoBuffersNum = 5;
 
 class VideoCapture
 {
@@ -51,6 +50,8 @@ class VideoCapture
     #if(ENUM_CTRL > 0)
         void enumerateMenu(__u32 id, __u32 min_i, __u32 max_i);
     #endif
+    
+        static constexpr size_t videoBuffersNum = 5;
         struct buffer
         {
             void *start;

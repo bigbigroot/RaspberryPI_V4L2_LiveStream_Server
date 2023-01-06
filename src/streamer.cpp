@@ -23,7 +23,7 @@ void H264VideoTrack::addVideo(rtc::PeerConnection& pc)
 {
     const rtc::SSRC ssrc{1};
     //payload type 98: Single NALU mode
-    const int payloadType{98};
+    const int payloadType{static_cast<int>(RTCPayloadType::H264)};
     const std::string cname("camera");
 
     rtc::Description::Video media(cname, rtc::Description::Direction::SendOnly);

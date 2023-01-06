@@ -81,16 +81,6 @@ int main(int argc, char *argv[]) {
             std::string&& url = item.get<std::string>();
             rtcConfig.iceServers.emplace_back(rtc::IceServer(url));
         }
-        
-        camera = std::make_shared<VideoCapture>("/dev/video0");
-
-        camera->setWindow(VideoCapture::WindowsSize::pixel_720p);
-        camera->openDevice();
-        camera->setVideoFormat();
-        camera->onSample = [&videoStream](void *data, size_t len)
-        {
-            videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len);
-        };
 
         mqttConn = std::make_shared<MqttConnect>(
             mqttURL, mqttClientId,mqttUsername, mqttPassword);
@@ -111,11 +101,26 @@ int main(int argc, char *argv[]) {
         {
             peers->processMessage(message);
         });
+        
+        camera = std::make_shared<VideoCapture>("/dev/video0");
+
+        camera->setWindow(VideoCapture::WindowsSize::pixel_720p);
+        camera->openDevice();
+        camera->checkDevCap();
+        camera->checkAllContol();
+        camera->checkVideoFormat();
+        camera->setVideoFormat();
+        camera->onSample = [&videoStream](void *data, size_t len)
+        {
+            videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len);
+        };
+
 
         while(!awaitExit)
         {
             camera->handleLoop();
         }
+        
         //... finally ...
         rtc::Cleanup();
     }catch(const std::exception& e)
