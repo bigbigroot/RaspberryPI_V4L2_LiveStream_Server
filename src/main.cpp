@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
     configFile = fopen("config.json", "r");
     if(configFile == nullptr)
     {
-        ERROR_MESSAGE("cannot open file!");
+        ERROR_MESSAGE("cannot open configure file!");
         return EXIT_FAILURE;
     }
 
@@ -67,8 +67,6 @@ int main(int argc, char *argv[]) {
     
     try
     {
-        rtc::Preload();
-
         auto configJson = nlohmann::json::parse(configFile);
         auto iceServerUrls = configJson["iceServer"]["urls"];
         std::string&& mqttURL = configJson["mqtt"]["url"].get<std::string>();
@@ -120,16 +118,15 @@ int main(int argc, char *argv[]) {
         {
             camera->handleLoop();
         }
-        
+
         //... finally ...
-        rtc::Cleanup();
+    camera->closeDevice();
+
     }catch(const std::exception& e)
     {
         printf("%s\n", e.what());
         return EXIT_FAILURE;
     }
-
-    camera->closeDevice();
 
     return 0;
 }

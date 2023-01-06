@@ -15,15 +15,15 @@
 // {
 // }
 
-H264VideoTrack::~H264VideoTrack()
-{
-}
+// H264VideoTrack::~H264VideoTrack()
+// {
+// }
 
 void H264VideoTrack::addVideo(rtc::PeerConnection& pc)
 {
     const rtc::SSRC ssrc{1};
-    //payload type 98: Single NALU mode
-    const int payloadType{static_cast<int>(RTCPayloadType::H264)};
+    
+    const int payloadType{static_cast<int>(100)};
     const std::string cname("camera");
 
     rtc::Description::Video media(cname, rtc::Description::Direction::SendOnly);
@@ -59,23 +59,31 @@ void H264VideoTrack::send(std::byte *data, size_t len)
 
 void H264VideoStream::addTrack(std::string id, const std::shared_ptr<H264VideoTrack>& track)
 {
+    lock.lock();
     tracks.insert({id, track});
+    lock.unlock();
 }
 
 void H264VideoStream::deleteById(std::string id)
 {
+    lock.lock();
     auto it = tracks.find(id);
 
     if(it != tracks.end())
     {
         tracks.erase(it);
     }
+    lock.unlock();
 }
 
 void H264VideoStream::onDataHandle(std::byte *data, size_t len)
 {
+    lock.lock();
     for(auto i: tracks)
     {
+        lock.unlock();
         i.second->send(data, len);
+        lock.lock();
     }
+    lock.unlock();
 }

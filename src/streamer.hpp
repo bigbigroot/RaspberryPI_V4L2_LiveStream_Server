@@ -14,8 +14,9 @@
 
 #include <vector>
 #include <memory>
+#include <mutex>
 
-#include "rtc/rtc.hpp"
+#include <rtc/rtc.hpp>
 
 using NALUnit = std::vector<std::byte>;
 
@@ -28,7 +29,7 @@ class H264VideoTrack
 
     public:
         H264VideoTrack()=default;
-        ~H264VideoTrack();
+        ~H264VideoTrack()=default;
         void addVideo(rtc::PeerConnection& pc);
         void sendKeyframe();
         void send(std::byte *data, size_t len);
@@ -38,6 +39,7 @@ class H264VideoStream
 {
     private:
         std::map<std::string, std::shared_ptr<H264VideoTrack>> tracks;
+        std::mutex lock;
     public:
         H264VideoStream()=default;
         ~H264VideoStream()=default;
