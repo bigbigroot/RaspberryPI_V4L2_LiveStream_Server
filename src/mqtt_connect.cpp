@@ -35,9 +35,9 @@ MQTTClient_message *msg)
 
     std::string message((char *)msg->payload, msg->payloadlen);
     
-    MQTT_LOG("message come in. topic: %s(%d)", topicName, topicLen);
-    MqttConnect *conn = (MqttConnect *)context;
-    conn->handleMessage(topic, message);
+    MQTT_LOG("message come in. topic: %s: %s", topic.c_str(), message.c_str());
+    MqttConnect *conn = static_cast<MqttConnect *>(context);
+    conn->onMessage(topic, message);
 
     MQTTClient_freeMessage(&msg);
     MQTTClient_free(topicName);
@@ -77,16 +77,13 @@ MqttConnect::~MqttConnect()
     MQTTClient_destroy(&client);
 }
 
-void MqttConnect::registeTopicHandle(std::string topic, onMessageCallback callback)
-{
-    allTopicHandles.insert_or_assign(topic, callback);
-}
-
 int MqttConnect::publishMessage(std::string topic, std::string message) noexcept
 {
     MQTTClient_message mqttMsg(MQTTClient_message_initializer);
     mqttMsg.payload = (void *)message.c_str();
     mqttMsg.payloadlen = message.length();
+    
+    MQTT_LOG("message will be send. topic: %s: %s", topic.c_str(), message.c_str());
     return MQTTClient_publishMessage(client, topic.c_str(), &mqttMsg, nullptr);
 }
 
@@ -98,13 +95,4 @@ int MqttConnect::subscribeTopic(std::string topic) noexcept
 int MqttConnect::unsubscribeTopic(std::string topic) noexcept
 {
     return MQTTClient_unsubscribe(client, topic.c_str());
-}
-
-void MqttConnect::handleMessage(std::string topic, std::string message)
-{
-    auto it = allTopicHandles.find(topic);
-    if(it != allTopicHandles.end())
-    {
-        it->second(topic, message);
-    }
 }

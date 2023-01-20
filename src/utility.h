@@ -14,11 +14,15 @@
 
 #include <stdio.h>
 
-#define ERROR_MESSAGE(...)   do{\
-                                fprintf(stderr, "error: ");\
+#define ERROR_MESSAGE(...)  do{\
+                                fprintf(stderr, "ERROR: ");\
                                 fprintf(stderr, __VA_ARGS__);\
                                 fprintf(stderr, "\n");\
                             }while (0)
 
-
+#define APP_MESSAGE(...)   do{\
+                                fprintf(stderr, "App INFO: ");\
+                                fprintf(stderr, __VA_ARGS__);\
+                                fprintf(stderr, "\n");\
+                            }while (0)
 #endif /* __UTILITY_H */

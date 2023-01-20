@@ -16,12 +16,14 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <linux/videodev2.h>    /* video for linux two header file */
+
 #include <functional>
 #include <string>
 #include <queue>
 
 #define VIDEO_DEBUG
-#define ENUM_CTRL 0
+#define ENUM_CTRL 1
 
 #ifdef VIDEO_DEBUG
     #define V4L2_MESSAGE(...)   do{\
@@ -34,6 +36,31 @@
     #define V4L2_MESSAGE(...) do{}while (0)
 #endif
 
+enum class H264Profile: int
+{
+    Baseline = V4L2_MPEG_VIDEO_H264_PROFILE_BASELINE,
+    Constrained_Baseline = V4L2_MPEG_VIDEO_H264_PROFILE_CONSTRAINED_BASELINE,
+    Main = V4L2_MPEG_VIDEO_H264_PROFILE_MAIN,
+    High = V4L2_MPEG_VIDEO_H264_PROFILE_HIGH
+};
+
+enum class H264Level: int
+{
+    Level1 = V4L2_MPEG_VIDEO_H264_LEVEL_1_0,
+    Level1b = V4L2_MPEG_VIDEO_H264_LEVEL_1B,
+    Level1_1 = V4L2_MPEG_VIDEO_H264_LEVEL_1_1,
+    Level1_2 = V4L2_MPEG_VIDEO_H264_LEVEL_1_2,
+    Level1_3 = V4L2_MPEG_VIDEO_H264_LEVEL_1_3,
+    Level2 = V4L2_MPEG_VIDEO_H264_LEVEL_2_0,
+    Level2_1 = V4L2_MPEG_VIDEO_H264_LEVEL_2_1,
+    Level2_2 = V4L2_MPEG_VIDEO_H264_LEVEL_2_2,
+    Level3 = V4L2_MPEG_VIDEO_H264_LEVEL_3_0,
+    Level3_1 = V4L2_MPEG_VIDEO_H264_LEVEL_3_1,
+    Level3_2 = V4L2_MPEG_VIDEO_H264_LEVEL_3_2,
+    Level4 = V4L2_MPEG_VIDEO_H264_LEVEL_4_0,
+    Level4_1 = V4L2_MPEG_VIDEO_H264_LEVEL_4_1,
+    Level4_2 = V4L2_MPEG_VIDEO_H264_LEVEL_4_2
+};
 
 class VideoCapture
 {
@@ -48,7 +75,7 @@ class VideoCapture
         }windows;
 
     #if(ENUM_CTRL > 0)
-        void enumerateMenu(__u32 id, __u32 min_i, __u32 max_i);
+        void enumerateMenu(uint32_t id, uint32_t min_i, uint32_t max_i);
     #endif
     
         static constexpr size_t videoBuffersNum = 5;
@@ -107,6 +134,8 @@ class VideoCapture
          * 
          */
         void setVideoFormat(void);
+
+        void setH264ProfileAndLevel();
         /**
          * @brief read a picture
          * 
@@ -123,15 +152,21 @@ class VideoCapture
 
 
         void handleLoop();
-
+        /**
+         * @brief Get the Image Size (only for read method)
+         * 
+         * @return size_t 
+         */
         size_t getImageSize(){return imgSize;}
 
         /**
          * @brief Set the resolution of the Video
          * 
-         * @param win 
+         * @param win resolution
          */
         void setWindow(WindowsSize win);
+
+        void setH264ProfileAndLevel(H264Profile profile, H264Level level);
 };
 
 #endif /* __CAPTURE_H */

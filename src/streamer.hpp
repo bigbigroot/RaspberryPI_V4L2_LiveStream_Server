@@ -18,6 +18,8 @@
 
 #include <rtc/rtc.hpp>
 
+#include "capture.hpp"
+
 using NALUnit = std::vector<std::byte>;
 
 
@@ -31,8 +33,8 @@ class H264VideoTrack
         H264VideoTrack()=default;
         ~H264VideoTrack()=default;
         void addVideo(rtc::PeerConnection& pc);
-        void sendKeyframe();
-        void send(std::byte *data, size_t len);
+        // void sendKeyframe();
+        void send(std::byte *data, size_t len, time_t time);
 };
 
 class H264VideoStream
@@ -45,7 +47,9 @@ class H264VideoStream
         ~H264VideoStream()=default;
         void addTrack(std::string id, const std::shared_ptr<H264VideoTrack>& track);
         void deleteById(std::string id);
-        void onDataHandle(std::byte *data, size_t len);
+        void onDataHandle(std::byte *data, size_t len,  time_t time);
+        static std::string getProfileLevelId(H264Profile profile,
+                                             H264Level level);
 };
 
 #endif /* __STREAMER_H */

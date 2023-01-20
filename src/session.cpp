@@ -9,16 +9,21 @@
  * 
  */
 #include "session.hpp"
+#include "utility.h"
 
 RTCPeerSession::RTCPeerSession(std::string id, const rtc::Configuration &config,
                                const std::shared_ptr<MqttConnect>& conn,
                                const std::shared_ptr<H264VideoTrack>& vt,
                                RTCPeerSessionManager &mg):
-pc(config), videoTrack(vt), offer(id, conn), manager(mg)
+isWilldestroyed(false), sessionId(id), pc(config),
+videoTrack(vt), offerer(id, conn), manager(mg)
 {}
 
 RTCPeerSession::~RTCPeerSession()
 {
+    APP_MESSAGE("session (id: %s) will be destoryed!", getId().c_str());
+    isWilldestroyed = true;
+    pc.close();
 }
 
 std::string RTCPeerSession::getLocalSdp()
@@ -31,6 +36,11 @@ void RTCPeerSession::setRemoteSdp(std::string sdp)
     pc.setRemoteDescription(rtc::Description(sdp, "answer"));
 }
 
+std::string RTCPeerSession::getId()
+{
+    return sessionId;
+}
+
 void RTCPeerSession::open()
 {
     pc.onGatheringStateChange(
@@ -39,7 +49,7 @@ void RTCPeerSession::open()
             if(state == rtc::PeerConnection::GatheringState::Complete)
             {
                 auto localSdp = this->getLocalSdp();
-                this->offer.sendOffer(localSdp);
+                this->offerer.sendOffer(localSdp);
             }
         }
     );
@@ -47,28 +57,43 @@ void RTCPeerSession::open()
     pc.onStateChange(
         [this](rtc::PeerConnection::State state)
         {
-            if(state == rtc::PeerConnection::State::Closed
+            if(state == rtc::PeerConnection::State::Connected)
+            {
+                auto id = this->getId();
+                
+                APP_MESSAGE("Session (id: %s) have been connected to the answer.", id.c_str());
+            }
+            else if(state == rtc::PeerConnection::State::Closed
                 || state == rtc::PeerConnection::State::Failed
                 || state == rtc::PeerConnection::State::Disconnected)
             {
-                this->offer.close();
+                this->close();
             }
         }
     );
 
-    offer.onRemoteSDP = [this](std::string sdp)
+    offerer.onRemoteSDP = [this](std::string sdp)
     {
         this->setRemoteSdp(sdp);
     };
     
-    offer.onClose = [this](){
-        auto id = this->offer.getId();
-        this->manager.deleteRTCPeerSession(id);
+    offerer.onClose = [this](){
+        pc.close();
     };
 
     videoTrack->addVideo(pc);
 
     pc.setLocalDescription(rtc::Description::Type::Offer);
+}
+
+void RTCPeerSession::close()
+{
+    if(!isWilldestroyed)
+    {
+        auto id = this->getId();
+        this->manager.deleteRTCPeerSession(id);
+        APP_MESSAGE("connect (id: %s) will be destoryed...", id.c_str());
+    }
 }
 
 RTCPeerSessionManager::RTCPeerSessionManager(
@@ -81,8 +106,12 @@ config(config), mqttConn(conn), stream(s)
 void RTCPeerSessionManager::createRTCPeerSession()
 {
     auto id = uidg.allocateAUniqueId();
-    for(;peerSessions.find(id) == peerSessions.end();        
-        id = uidg.allocateAUniqueId());    
+    APP_MESSAGE("allocated a id: %s.", id.c_str());
+    while(peerSessions.find(id) != peerSessions.end())
+    {
+        ERROR_MESSAGE("id: %s have already existed!", id.c_str());
+        id = uidg.allocateAUniqueId();
+    } 
 
     std::shared_ptr<H264VideoTrack> track = std::make_shared<H264VideoTrack>();
 
@@ -101,23 +130,40 @@ void RTCPeerSessionManager::processMessage(std::string message)
 
     if(it == peerSessions.end())
     {
-        ROAPMessage out;
-        out.messageType = ROAPMessageType::Error;
-        out.errorType = ROAPMessageErrorType::NoMatch;
-        out.offererSessionId = in.offererSessionId;
-        out.answererSessionId = in.answererSessionId;
-        out.seq = in.seq;
+        if(in.messageType != ROAPMessageType::Error)
+        {
+            ROAPMessage out;
+            out.messageType = ROAPMessageType::Error;
+            out.errorType = ROAPMessageErrorType::NoMatch;
+            out.offererSessionId = in.offererSessionId;
+            out.answererSessionId = in.answererSessionId;
+            out.seq = in.seq;
 
-        mqttConn->publishMessage(SEND_TOPIC, out.toString());
+            mqttConn->publishMessage("webrtc/roap/app", out.toString());
+        }
+
     }else
     {
-        it->second->offer.processMessage(in);
+        it->second->offerer.processMessage(in);
     }
     
 }
 
 void RTCPeerSessionManager::deleteRTCPeerSession(const std::string& id)
 {
-    peerSessions.erase(id);
     stream->deleteById(id);
+    lock.lock();
+    closedSessions.push_back(id);
+    lock.unlock();
+}
+
+void RTCPeerSessionManager::loopHandler()
+{
+    
+    lock.lock();
+    for(auto id: closedSessions)
+    {
+        peerSessions.erase(id);
+    }
+    lock.unlock();
 }

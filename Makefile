@@ -5,12 +5,18 @@ BINARY_DIR = .
 
 DEBUG = 1
 
-CC = gcc
-CXX = g++
-CFLAGS =
-CXXFLAGS = -std=c++17
+PTHREAD = 1
 
-LDFLAGS = -pthread 
+Prefix = ${HOME}/x-tools/aarch64-rpi3-linux-gnu/bin/aarch64-rpi3-linux-gnu-
+SYSROOTDIR = ${HOME}/wifi_camera/sysroot
+
+CC = $(Prefix)gcc
+CXX = $(Prefix)g++
+CFLAGS = -std=c11 --sysroot=$(SYSROOTDIR)
+CXXFLAGS = -std=c++17 --sysroot=$(SYSROOTDIR)
+
+LDFLAGS = --sysroot=$(SYSROOTDIR)
+
 
 SRC = \
 src/capture.cpp \
@@ -23,21 +29,26 @@ src/main.cpp
 
 
 INC = \
--I/usr/local/include \
--I/usr//include/x86_64-linux-gnu
+-I$(SYSROOTDIR)/usr/local/include
 
 
-LIBS =  -L/usr/local/lib \
--ldatachannel \
--lpaho-mqtt3c
+LIBS = \
+-L$(SYSROOTDIR)/usr/local/lib \
+-lpaho-mqtt3c \
+-ldatachannel
 
+
+ifeq ($(PTHREAD), 1)
+	CFLAGS += -pthread 
+	CXXFLAGS += -pthread 
+	LDFLAGS += -pthread 
+endif
 
 ifeq ($(DEBUG), 1)
 	CFLAGS += -g 
 	CXXFLAGS += -g 
 	LDFLAGS += -g
 endif
-
 
 OBJ = $(addprefix $(BUILD_DIR)/,$(addsuffix .o,$(notdir $(basename $(SRC)))))
 vpath %.c $(sort $(dir $(SRC)))

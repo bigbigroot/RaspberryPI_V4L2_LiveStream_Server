@@ -22,19 +22,14 @@
 
 #ifdef MQTT_INFO
     #define MQTT_LOG(...)   do{\
-                                    printf("MQTT info: ");\
-                                    printf(__VA_ARGS__);\
-                                    printf("\n");\
-                                }while (0)
+                                printf("MQTT info: ");\
+                                printf(__VA_ARGS__);\
+                                printf("\n");\
+                            }while (0)
                                 
 #else
     #define V4L2_MESSAGE(...) do{}while (0)
 #endif
-
-
-#define SEND_TOPIC  "webrtc/roap/app"
-#define RECV_TOPIC  "webrtc/roap/camera"
-
 
 using onMessageCallback = std::function<void(std::string topic, std::string msg)>;
 
@@ -43,14 +38,13 @@ class MqttConnect
     private:
         MQTTClient client;
         MQTTClient_connectOptions connOpt;
-        std::map<std::string, onMessageCallback> allTopicHandles;
+        onMessageCallback handler;
     public:
         MqttConnect()=delete;
         MqttConnect(const std::string& url, const std::string& clientId, 
                     const std::string& username, const std::string& password);
         ~MqttConnect();
-        void handleMessage(std::string topic, std::string message);
-        void registeTopicHandle(std::string topic, onMessageCallback callback);
+        onMessageCallback onMessage;
         int publishMessage(std::string topic, std::string message) noexcept;
         int subscribeTopic(std::string topic) noexcept;
         int unsubscribeTopic(std::string topic) noexcept;

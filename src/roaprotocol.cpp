@@ -143,7 +143,7 @@ std::string ROAPMessage::toString()
     return std::forward<std::string>(json.dump(4));
 }
 
-ROAPSession::ROAPSession(const std::string& id):
+ROAPSession::ROAPSession(std::string id):
 myId(id), currentSeq(1),
 state(ROAPSessionState::Start)
 {}
@@ -157,7 +157,7 @@ localSdp(std::move(session.localSdp))
 {}
 
 OfferSession::OfferSession(
-    const std::string& id, const std::shared_ptr<MqttConnect>& conn):
+    std::string id, std::shared_ptr<MqttConnect> conn):
 ROAPSession(id), mqttConn(conn)
 {}
 
@@ -170,14 +170,14 @@ void OfferSession::sendOffer(std::string sdp)
     ROAPMessage packet;
     if(state == ROAPSessionState::Closed)
     {
-        throw std::logic_error("the offer is closed");
+        ERROR_MESSAGE("the offerer(%s) is closed", myId.c_str());
     }
     packet.messageType = ROAPMessageType::Offer;
     packet.offererSessionId = myId;
     packet.seq=currentSeq;
     packet.sdp = sdp;
     state = ROAPSessionState::WaitAnswer;
-    mqttConn->publishMessage(SEND_TOPIC, packet.toString());
+    mqttConn->publishMessage("webrtc/roap/app", packet.toString());
 }
 
 void OfferSession::processMessage(ROAPMessage &in)
@@ -191,10 +191,12 @@ void OfferSession::processMessage(ROAPMessage &in)
         out.offererSessionId = in.offererSessionId;
         out.answererSessionId = in.answererSessionId;
         out.seq = in.seq;
-
-        mqttConn->publishMessage(SEND_TOPIC, out.toString());
+        
+        mqttConn->publishMessage("webrtc/roap/app", out.toString());
+        state = ROAPSessionState::Closed;
+        onClose();
     }
-    if(!(yourId.empty() ||
+    else if(!(yourId.empty() ||
         yourId.compare(in.answererSessionId) == 0))
     {
         out.messageType = ROAPMessageType::Error;
@@ -203,121 +205,126 @@ void OfferSession::processMessage(ROAPMessage &in)
         out.answererSessionId = in.answererSessionId;
         out.seq = currentSeq;
 
-        mqttConn->publishMessage(SEND_TOPIC, out.toString());           
-    }
-    switch (state)
+        mqttConn->publishMessage("webrtc/roap/app", out.toString());  
+        state = ROAPSessionState::Closed;
+        onClose();         
+    }else
     {
-        case ROAPSessionState::Start:
+        switch (state)
         {
-            if(in.messageType == ROAPMessageType::Shutdown)
+            case ROAPSessionState::Start:
             {
-                state=ROAPSessionState::Closed;
-                out.messageType = ROAPMessageType::Ok;
-                out.offererSessionId = in.offererSessionId;
-                out.answererSessionId = in.answererSessionId;
-                out.seq = in.seq;
-                mqttConn->publishMessage(SEND_TOPIC, out.toString());
-                onClose();
-            }
-            break;
-        }
-        case ROAPSessionState::WaitAnswer:
-        {
-            if(in.messageType == ROAPMessageType::Answer)
-            {
-                if(yourId.empty())
+                if(in.messageType == ROAPMessageType::Shutdown)
                 {
-                    yourId=in.answererSessionId;
+                    state=ROAPSessionState::Closed;
+                    out.messageType = ROAPMessageType::Ok;
+                    out.offererSessionId = in.offererSessionId;
+                    out.answererSessionId = in.answererSessionId;
+                    out.seq = in.seq;
+                    mqttConn->publishMessage("webrtc/roap/app", out.toString());
+                    onClose();
                 }
-    
-                remoteSdp = in.sdp;
-                onRemoteSDP(in.sdp);
-                state = ROAPSessionState::Completed;
-                out.messageType = ROAPMessageType::Ok;
+                break;
+            }
+            case ROAPSessionState::WaitAnswer:
+            {
+                if(in.messageType == ROAPMessageType::Answer)
+                {
+                    if(yourId.empty())
+                    {
+                        yourId=in.answererSessionId;
+                    }
+        
+                    remoteSdp = in.sdp;
+                    onRemoteSDP(in.sdp);
+                    state = ROAPSessionState::Completed;
+                    out.messageType = ROAPMessageType::Ok;
+                    out.offererSessionId = in.offererSessionId;
+                    out.answererSessionId = out.answererSessionId;
+                    out.seq = currentSeq;
+                    currentSeq++;
+                    mqttConn->publishMessage("webrtc/roap/app", out.toString());
+                }else if(in.messageType == ROAPMessageType::Error)
+                {
+                    ERROR_MESSAGE("ROAP Error: %x", uint8_t(in.errorType));
+                    state = ROAPSessionState::Closed;     
+                    
+                }else if(in.messageType == ROAPMessageType::Shutdown)
+                {
+                    state=ROAPSessionState::Closed;
+                    out.messageType = ROAPMessageType::Ok;
+                    out.offererSessionId = in.offererSessionId;
+                    out.answererSessionId = in.answererSessionId;
+                    out.seq = in.seq;
+                    mqttConn->publishMessage("webrtc/roap/app", out.toString());
+                }
+                
+                break;
+            }
+            case ROAPSessionState::WaitCompleted:
+            {
+                if(in.messageType == ROAPMessageType::Ok)
+                {
+                    currentSeq++;
+                    state=ROAPSessionState::Completed;
+                }else if(in.messageType == ROAPMessageType::Shutdown)
+                {
+                    state=ROAPSessionState::Closed;
+                    out.messageType = ROAPMessageType::Ok;
+                    out.offererSessionId = in.offererSessionId;
+                    out.answererSessionId = in.answererSessionId;
+                    out.seq = in.seq;
+                    mqttConn->publishMessage("webrtc/roap/app", out.toString());
+                    onClose();
+                }
+                
+                break;
+            }
+            case ROAPSessionState::Completed:
+            {
+                break;
+            }
+            case ROAPSessionState::WaitForShutdown:
+            {
+                if(in.messageType == ROAPMessageType::Ok) 
+                {
+                    state=ROAPSessionState::Closed;
+                    onClose();
+                }else if(in.messageType == ROAPMessageType::Shutdown)
+                {
+                    state=ROAPSessionState::Closed;
+                    out.messageType = ROAPMessageType::Ok;
+                    out.offererSessionId = in.offererSessionId;
+                    out.answererSessionId = in.answererSessionId;
+                    out.seq = in.seq;
+                    mqttConn->publishMessage("webrtc/roap/app", out.toString());
+                    
+                    onClose();                
+                }else
+                {
+                    out.messageType = ROAPMessageType::Shutdown;
+                    out.offererSessionId = in.offererSessionId;
+                    out.answererSessionId = in.answererSessionId;
+                    out.seq = in.seq;
+                    mqttConn->publishMessage("webrtc/roap/app", out.toString());
+                }
+                
+                break;
+            } 
+            case ROAPSessionState::Closed:
+            {
+                out.messageType = ROAPMessageType::Error;
+                out.errorType = ROAPMessageErrorType::NoMatch;
                 out.offererSessionId = in.offererSessionId;
                 out.answererSessionId = out.answererSessionId;
-                out.seq = currentSeq;
-                currentSeq++;
-                mqttConn->publishMessage(SEND_TOPIC, out.toString());
-            }else if(in.messageType == ROAPMessageType::Error)
-            {
-                ERROR_MESSAGE("ROAP Error: %x", uint8_t(in.errorType));
-                state = ROAPSessionState::Closed;     
+                out.seq = currentSeq;  
+                mqttConn->publishMessage("webrtc/roap/app", out.toString());
                 
-            }else if(in.messageType == ROAPMessageType::Shutdown)
-            {
-                state=ROAPSessionState::Closed;
-                out.messageType = ROAPMessageType::Ok;
-                out.offererSessionId = in.offererSessionId;
-                out.answererSessionId = in.answererSessionId;
-                out.seq = in.seq;
-                mqttConn->publishMessage(SEND_TOPIC, out.toString());
-            }
-            
-            break;
+                break;
+            }   
         }
-        case ROAPSessionState::WaitCompleted:
-        {
-            if(in.messageType == ROAPMessageType::Ok)
-            {
-                currentSeq++;
-                state=ROAPSessionState::Completed;
-            }else if(in.messageType == ROAPMessageType::Shutdown)
-            {
-                state=ROAPSessionState::Closed;
-                out.messageType = ROAPMessageType::Ok;
-                out.offererSessionId = in.offererSessionId;
-                out.answererSessionId = in.answererSessionId;
-                out.seq = in.seq;
-                mqttConn->publishMessage(SEND_TOPIC, out.toString());
-                onClose();
-            }
-            
-            break;
-        }
-        case ROAPSessionState::Completed:
-        {
-            break;
-        }
-        case ROAPSessionState::WaitForShutdown:
-        {
-            if(in.messageType == ROAPMessageType::Ok) 
-            {
-                state=ROAPSessionState::Closed;
-                onClose();
-            }else if(in.messageType == ROAPMessageType::Shutdown)
-            {
-                state=ROAPSessionState::Closed;
-                out.messageType = ROAPMessageType::Ok;
-                out.offererSessionId = in.offererSessionId;
-                out.answererSessionId = in.answererSessionId;
-                out.seq = in.seq;
-                mqttConn->publishMessage(SEND_TOPIC, out.toString());
-                
-                onClose();                
-            }else
-            {
-                out.messageType = ROAPMessageType::Shutdown;
-                out.offererSessionId = in.offererSessionId;
-                out.answererSessionId = in.answererSessionId;
-                out.seq = in.seq;
-                mqttConn->publishMessage(SEND_TOPIC, out.toString());
-            }
-            
-            break;
-        } 
-        case ROAPSessionState::Closed:
-        {
-            out.messageType = ROAPMessageType::Error;
-            out.errorType = ROAPMessageErrorType::NoMatch;
-            out.offererSessionId = in.offererSessionId;
-            out.answererSessionId = out.answererSessionId;
-            out.seq = currentSeq;  
-            mqttConn->publishMessage(SEND_TOPIC, out.toString());
-            
-            break;
-        }   
     }
+    
 }
 
 
@@ -334,5 +341,5 @@ void OfferSession::close()
     packet.answererSessionId = yourId;
     packet.seq = currentSeq;
     
-    mqttConn->publishMessage(SEND_TOPIC, packet.toString());
+    mqttConn->publishMessage("webrtc/roap/app", packet.toString());
 }

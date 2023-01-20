@@ -22,10 +22,96 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 
-#include <linux/videodev2.h>    /* video for linux two header file */
-
 #include "capture.hpp"
 #include "utility.h"
+
+std::string StrOfProfile(int p)
+{
+    switch (static_cast<H264Profile>(p))
+    {
+        case H264Profile::Baseline:
+        {
+            return "Baseline";
+        }
+        case H264Profile::Constrained_Baseline:
+        {
+            return "Constrained Baseline";
+        }
+        case H264Profile::Main:
+        {
+            return "Main";
+        }
+        case H264Profile::High:
+        {
+            return "High";
+        }
+    }
+    return "";
+}
+
+std::string StrOfLevel(int p)
+{
+    switch (static_cast<H264Level>(p))
+    {
+        case H264Level::Level1:
+        {
+            return "1.0";
+        }
+        case H264Level::Level1b:
+        {
+            return "1b";
+        }
+        case H264Level::Level1_1:
+        {
+            return "1.1";
+        }
+        case H264Level::Level1_2:
+        {
+            return "1.2";
+        }
+        case H264Level::Level1_3:
+        {
+            return "1.3";
+        }
+        case H264Level::Level2:
+        {
+            return "2.0";
+        }
+        case H264Level::Level2_1:
+        {
+            return "2.1";
+        }
+        case H264Level::Level2_2:
+        {
+            return "2.2";
+        }
+        case H264Level::Level3:
+        {
+            return "3.0";
+        }
+        case H264Level::Level3_1:
+        {
+            return "3.1";
+        }
+        case H264Level::Level3_2:
+        {
+            return "3.2";
+        }
+        case H264Level::Level4:
+        {
+            return "4.0";
+        }
+        case H264Level::Level4_1:
+        {
+            return "4.1";
+        }
+        case H264Level::Level4_2:
+        {
+            return "4.2";
+        }
+    }
+    return "";
+}
 
 #if(ENUM_CTRL > 0)
 void VideoCapture::enumerateMenu(__u32 id, __u32 min_i, __u32 max_i){
@@ -181,7 +267,7 @@ void VideoCapture::checkAllContol(){
 #if(ENUM_CTRL > 0)
             else if(cam_ctrl_info.type == V4L2_CTRL_TYPE_MENU){
                 V4L2_MESSAGE("control (%s)", cam_ctrl_info.name);
-                enumerate_menu(cam_ctrl_info.id, cam_ctrl_info.minimum, 
+                enumerateMenu(cam_ctrl_info.id, cam_ctrl_info.minimum, 
                     cam_ctrl_info.maximum);
             }
 #endif
@@ -275,6 +361,48 @@ void VideoCapture::setVideoFormat(void){
     
     imgSize = video_fmt.fmt.pix.sizeimage;
     V4L2_MESSAGE("image size: %d.", imgSize);
+}
+
+void VideoCapture::setH264ProfileAndLevel(H264Profile profile,
+                                          H264Level level)
+{
+    struct v4l2_control control;
+
+    if(!isOpened){
+        ERROR_MESSAGE("device(%s) has not opened.",
+            deviceName.c_str());
+        throw std::runtime_error("device has not been opened.");
+    }
+    
+    memset(&control, 0, sizeof(control));
+    control.id = V4L2_CID_MPEG_VIDEO_H264_PROFILE;
+    control.value = (int32_t)profile;
+
+    if(ioctl(fd, VIDIOC_S_CTRL, &control) == -1)
+    {
+        ERROR_MESSAGE("VIDIOC_S_CTRL (%s(%d)).",
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_S_CTRL");
+    }else
+    {
+        V4L2_MESSAGE("set h.264 profil: %s", StrOfProfile(control.value).c_str());        
+    }    
+    
+    memset(&control, 0, sizeof(control));
+    control.id = V4L2_CID_MPEG_VIDEO_H264_LEVEL;
+    control.value = (int32_t)level;
+
+    if(ioctl(fd, VIDIOC_S_CTRL, &control) == -1)
+    {
+        ERROR_MESSAGE("VIDIOC_S_CTRL (%s(%d)).",
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_S_CTRL");
+    }else
+    {
+        V4L2_MESSAGE("set h.264 level: %s", StrOfLevel(control.value).c_str());        
+    }
 }
 
 int VideoCapture::readVideoFrame(uint8_t *buf, size_t len){
@@ -396,9 +524,9 @@ void VideoCapture::handleLoop()
         initMmap();
     }
 
-    for(auto i = videoBuffer.front(); !videoBuffer.empty();
-        videoBuffer.pop_front())
+    for(; !videoBuffer.empty(); videoBuffer.pop_front())
     {
+        auto& i = videoBuffer.front();
         onSample(i.start, i.length);
         if(munmap(i.start, i.length) == -1)
         {
@@ -410,3 +538,4 @@ void VideoCapture::handleLoop()
     }
 
 }
+

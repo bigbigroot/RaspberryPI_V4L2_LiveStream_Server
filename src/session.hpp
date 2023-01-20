@@ -15,6 +15,7 @@
 #include <rtc/rtc.hpp>
 #include <memory>
 #include <map>
+#include <string>
 
 #include "roaprotocol.hpp"
 #include "streamer.hpp"
@@ -26,6 +27,8 @@ class RTCPeerSessionManager;
 class RTCPeerSession
 {
     private:
+        bool isWilldestroyed;
+        std::string sessionId;
         rtc::PeerConnection pc;
         std::shared_ptr<H264VideoTrack> videoTrack;
     public:
@@ -34,12 +37,14 @@ class RTCPeerSession
                        const std::shared_ptr<H264VideoTrack>& vt,
                        RTCPeerSessionManager &mg);
         ~RTCPeerSession();
-        OfferSession offer;
+        OfferSession offerer;
         RTCPeerSessionManager &manager;
         std::string getLocalSdp();
         std::string getId();
         void setRemoteSdp(std::string sdp);
         void open();
+        void close();
+        
 };
 
 class RTCPeerSessionManager
@@ -49,7 +54,10 @@ class RTCPeerSessionManager
         rtc::Configuration config;
         std::shared_ptr<MqttConnect> mqttConn;
         std::shared_ptr<H264VideoStream> stream;
+        std::vector<std::string> closedSessions;
         std::map<std::string, std::unique_ptr<RTCPeerSession>> peerSessions;
+        
+        std::mutex lock;
     public:
         RTCPeerSessionManager(rtc::Configuration&& config,
                               const std::shared_ptr<MqttConnect>& conn,
@@ -58,6 +66,7 @@ class RTCPeerSessionManager
         void createRTCPeerSession();
         void processMessage(std::string message);
         void deleteRTCPeerSession(const std::string& id);
+        void loopHandler();
 };
 
 #endif /* __SESSION_H */

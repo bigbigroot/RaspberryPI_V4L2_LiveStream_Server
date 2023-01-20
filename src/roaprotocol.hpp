@@ -79,7 +79,7 @@ class ROAPSession
         std::string localSdp;
 
     public:
-        ROAPSession(const std::string& id);
+        ROAPSession(std::string id);
         ROAPSession(ROAPSession&& session);
         ~ROAPSession()=default;
 };
@@ -90,7 +90,7 @@ class OfferSession: public ROAPSession
     private:
         std::shared_ptr<MqttConnect> mqttConn;
     public:
-        OfferSession(const std::string& id, const std::shared_ptr<MqttConnect>& conn);
+        OfferSession(std::string id, std::shared_ptr<MqttConnect> conn);
         OfferSession(OfferSession&& session);
         ~OfferSession()=default;
         std::function<void(std::string sdp)> onRemoteSDP=nullptr;

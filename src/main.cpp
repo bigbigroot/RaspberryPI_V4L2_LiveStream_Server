@@ -9,9 +9,7 @@
  * 
  */
 
-#include <stdio.h>
-#include <signal.h>
-#include <errno.h>
+#include <csignal>
 
 #include <iostream>
 #include <memory>
@@ -32,7 +30,7 @@
 bool awaitExit = false;
 
 void signal_handler(int sig){
-    printf("programm will exit...\n");
+    APP_MESSAGE("programm will exit...");
     awaitExit = true;
 }
 
@@ -50,7 +48,6 @@ int main(int argc, char *argv[]) {
 
     signal(SIGINT, signal_handler);
     
-    rtcConfig.iceServers.emplace_back(rtc::IceServer("stun:192.168.5.10:3478"));
 
     configFile = fopen("config.json", "r");
     if(configFile == nullptr)
@@ -58,12 +55,6 @@ int main(int argc, char *argv[]) {
         ERROR_MESSAGE("cannot open configure file!");
         return EXIT_FAILURE;
     }
-
-    rtc::InitLogger(rtc::LogLevel::Verbose, 
-    [](rtc::LogLevel logLevel,std::string msg){
-        printf("LibDataChannel Debug: %s\n", msg.c_str());
-    });
-    
     
     try
     {
@@ -84,22 +75,57 @@ int main(int argc, char *argv[]) {
             mqttURL, mqttClientId,mqttUsername, mqttPassword);
         videoStream = std::make_shared<H264VideoStream>();
         peers = std::make_unique<RTCPeerSessionManager>(std::move(rtcConfig), mqttConn, videoStream);
-        
+
+        rtc::InitLogger(rtc::LogLevel::Verbose, 
+            [](rtc::LogLevel logLevel, std::string msg){
+                switch (logLevel)
+                {
+                    case rtc::LogLevel::Fatal:
+                    {
+                        std::cout<<"LibDataChannel Fatal: "<<msg<<std::endl;
+                    }
+                    case rtc::LogLevel::Error:
+                    {
+                        std::cout<<"LibDataChannel Error: "<<msg<<std::endl;
+                    }
+                    case rtc::LogLevel::Warning:
+                    {
+                        std::cout<<"LibDataChannel Warn: "<<msg<<std::endl;
+                    }
+                    case rtc::LogLevel::Info:
+                    {
+                        std::cout<<"LibDataChannel Info: "<<msg<<std::endl;
+                    }
+                    case rtc::LogLevel::Debug:
+                    {
+                        std::cout<<"LibDataChannel Debug: "<<msg<<std::endl;
+                    }
+                    default:
+                    {
+                        // std::cout<<"LibDataChannel output: "<<msg<<std::endl;
+                        break;
+                    }
+                }
+            }
+        );
+
+        rtc::Preload();
+
+        mqttConn->onMessage =
+        [&peers](std::string topic, std::string message)
+        {
+            if(topic.compare("webrtc/notify/camera") == 0)
+            {
+                peers->createRTCPeerSession();
+            }else if(topic.compare("webrtc/roap/camera") == 0)
+            {
+                peers->processMessage(message);
+            }            
+        };
+
         mqttConn->subscribeTopic("webrtc/notify/camera");
         mqttConn->subscribeTopic("webrtc/roap/camera");
 
-        mqttConn->registeTopicHandle("webrtc/notify/camera", 
-        [&peers](std::string topic, std::string message)
-        {
-            peers->createRTCPeerSession();
-        });
-
-        mqttConn->registeTopicHandle("webrtc/roap/camera", 
-        [&peers](std::string topic, std::string message)
-        {
-            peers->processMessage(message);
-        });
-        
         camera = std::make_shared<VideoCapture>("/dev/video0");
 
         camera->setWindow(VideoCapture::WindowsSize::pixel_720p);
@@ -108,23 +134,28 @@ int main(int argc, char *argv[]) {
         camera->checkAllContol();
         camera->checkVideoFormat();
         camera->setVideoFormat();
+        camera->setH264ProfileAndLevel(H264Profile::Constrained_Baseline,
+                                       H264Level::Level3_1);
         camera->onSample = [&videoStream](void *data, size_t len)
         {
-            videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len);
+            time_t time = 0;
+            videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len, time);
         };
 
 
         while(!awaitExit)
         {
-            camera->handleLoop();
+            // camera->handleLoop();
         }
 
         //... finally ...
-    camera->closeDevice();
+        camera->closeDevice();
+
+        rtc::Cleanup();
 
     }catch(const std::exception& e)
     {
-        printf("%s\n", e.what());
+        std::cout<<e.what()<<std::endl;
         return EXIT_FAILURE;
     }
 
