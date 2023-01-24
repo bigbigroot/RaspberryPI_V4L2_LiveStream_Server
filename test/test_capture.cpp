@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
 
     camera = std::make_unique<VideoCapture>("/dev/video0");
 
-    camera->setWindow(WindowsSize::pixel_720p);
+    camera->setWindow(VideoCapture::WindowsSize::pixel_720p);
     try{
         camera->openDevice();
 
@@ -78,9 +78,9 @@ int main(int argc, char *argv[]) {
     }
     // test read h.264 video stream and the write to file.
     for(i=0; i<1000; i++){
-        if(camera->readVideoFrame(video_buffer->start, video_buffer->len) == -1){
-            break;
-        }
+        // if(camera->readVideoFrame(video_buffer->start, video_buffer->len) == -1){
+            // break;
+        // }
         
         fwrite(video_buffer->start, 1,video_buffer->len, output_file);
     }

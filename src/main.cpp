@@ -28,6 +28,7 @@
 #include "mqtt_connect.hpp"
 
 bool awaitExit = false;
+int count=0;
 
 void signal_handler(int sig){
     APP_MESSAGE("programm will exit...");
@@ -73,7 +74,6 @@ int main(int argc, char *argv[]) {
 
         mqttConn = std::make_shared<MqttConnect>(
             mqttURL, mqttClientId,mqttUsername, mqttPassword);
-        videoStream = std::make_shared<H264VideoStream>();
         peers = std::make_unique<RTCPeerSessionManager>(std::move(rtcConfig), mqttConn, videoStream);
 
         rtc::InitLogger(rtc::LogLevel::Verbose, 
@@ -114,13 +114,14 @@ int main(int argc, char *argv[]) {
         mqttConn->onMessage =
         [&peers](std::string topic, std::string message)
         {
+            peers->loopHandler(); 
             if(topic.compare("webrtc/notify/camera") == 0)
             {
                 peers->createRTCPeerSession();
             }else if(topic.compare("webrtc/roap/camera") == 0)
             {
                 peers->processMessage(message);
-            }            
+            }       
         };
 
         mqttConn->subscribeTopic("webrtc/notify/camera");
@@ -136,19 +137,27 @@ int main(int argc, char *argv[]) {
         camera->setVideoFormat();
         camera->setH264ProfileAndLevel(H264Profile::Constrained_Baseline,
                                        H264Level::Level3_1);
+        auto fps = camera->getVideoStreamFps();
+        videoStream = std::make_shared<H264VideoStream>(fps);
+
         camera->onSample = [&videoStream](void *data, size_t len)
         {
-            time_t time = 0;
-            videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len, time);
+            videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len);
         };
-
+        camera->initMmap();
+        camera->start();
 
         while(!awaitExit)
         {
-            // camera->handleLoop();
+            // if(videoStream->hasTrack())
+            {
+                camera->handleLoop();
+            }
         }
 
         //... finally ...
+        camera->stop();
+        camera->uninitMmap();
         camera->closeDevice();
 
         rtc::Cleanup();

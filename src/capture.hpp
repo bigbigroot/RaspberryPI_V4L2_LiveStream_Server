@@ -62,6 +62,12 @@ enum class H264Level: int
     Level4_2 = V4L2_MPEG_VIDEO_H264_LEVEL_4_2
 };
 
+struct buffer
+{
+    void *start;
+    size_t length;
+};
+
 class VideoCapture
 {
     private:
@@ -73,19 +79,16 @@ class VideoCapture
             uint32_t height;
             uint32_t width;
         }windows;
+        unsigned int fps;
 
     #if(ENUM_CTRL > 0)
         void enumerateMenu(uint32_t id, uint32_t min_i, uint32_t max_i);
     #endif
     
-        static constexpr size_t videoBuffersNum = 5;
-        struct buffer
-        {
-            void *start;
-            size_t length;
-        };
+        static constexpr size_t VideoBuffersMaxNum = 5;
+        size_t buffersNum=0;
 
-        std::deque<buffer> videoBuffer;
+        struct buffer *videoBuffers;
         
     public:
         enum class WindowsSize{
@@ -135,7 +138,11 @@ class VideoCapture
          */
         void setVideoFormat(void);
 
+        unsigned int getVideoStreamFps(){return fps;}
+
         void setH264ProfileAndLevel();
+
+        #ifdef READWRITE
         /**
          * @brief read a picture
          * 
@@ -144,12 +151,22 @@ class VideoCapture
          * @return ssize_t 
          */
         int readVideoFrame(uint8_t *buf, size_t len);
+        #endif
         /**
          * @brief 
          * 
          */
         void initMmap(void);
 
+        /**
+         * @brief 
+         * 
+         */
+        void uninitMmap(void);
+
+        void start();
+
+        void stop();
 
         void handleLoop();
         /**

@@ -12,13 +12,8 @@
 #include "streamer.hpp"
 #include "utility.h"
 
-// H264VideoTrack::H264VideoTrack()
-// {
-// }
 
-// H264VideoTrack::~H264VideoTrack()
-// {
-// }
+const uint8_t start_code[] = {0x00, 0x00, 0x00, 0x01};
 
 constexpr uint8_t h264_baseline_profile = 66;
 constexpr uint8_t h264_main_profile = 77;
@@ -41,6 +36,14 @@ constexpr uint8_t constraint_clear3_flag = 0xe0;
 constexpr uint8_t constraint_clear4_flag = 0xf7;
 constexpr uint8_t constraint_clear5_flag = 0xfb;
 
+H264VideoTrack::H264VideoTrack(double frameDuration):
+frameDuration_s(frameDuration)
+{
+}
+
+// H264VideoTrack::~H264VideoTrack()
+// {
+// }
 void H264VideoTrack::addVideo(rtc::PeerConnection& pc)
 {
     const rtc::SSRC ssrc{1};
@@ -64,23 +67,37 @@ void H264VideoTrack::addVideo(rtc::PeerConnection& pc)
     // create H264 handler
     auto h264Handler = std::make_shared<rtc::H264PacketizationHandler>(packetizer);
     // add RTCP SR handler
-    auto srReporter = std::make_shared<rtc::RtcpSrReporter>(rtpConfig);
+    srReporter = std::make_shared<rtc::RtcpSrReporter>(rtpConfig);
     h264Handler->addToChain(srReporter);
     // add RTCP NACK handler
     auto nackResponder = std::make_shared<rtc::RtcpNackResponder>();
     h264Handler->addToChain(nackResponder);
     // set handler
     track->setMediaHandler(h264Handler);
+
+    track->onOpen([this]()
+        {
+            this->start();
+        }
+    );
 }
 
-
-void H264VideoTrack::send(std::byte *data, size_t len, time_t time)
+void H264VideoTrack::start()
 {
-    // sample time is in us, we need to convert it to seconds
-    auto elapsedSeconds = double(time) / (1000 * 1000);
+    startHandler();
+}
+
+void H264VideoTrack::onStart(std::function<void()> callback)
+{
+    startHandler = callback;
+}
+
+void H264VideoTrack::send(NALUnit data, uint64_t time)
+{
     
     auto rtpConfig = srReporter->rtpConfig;
-
+     // sample time is in us, we need to convert it to seconds
+    auto elapsedSeconds = double(time) / (1000 * 1000);
     // get elapsed time in clock rate
     uint32_t elapsedTimestamp = rtpConfig->secondsToTimestamp(elapsedSeconds);
     // set new timestamp
@@ -89,19 +106,57 @@ void H264VideoTrack::send(std::byte *data, size_t len, time_t time)
     // get elapsed time in clock rate from last RTCP sender report
     auto reportElapsedTimestamp = rtpConfig->timestamp - srReporter->lastReportedTimestamp();
     // check if last report was at least 1 second ago
-    if (rtpConfig->timestampToSeconds(reportElapsedTimestamp) > 1) {
+    if (rtpConfig->timestampToSeconds(reportElapsedTimestamp) > 1)
+    {
         srReporter->setNeedsToReport();
     }
 
     try {
         // send sample
-        track->send(data, len);
+        track->send(std::move(data));
     } catch (const std::exception &e) {
         ERROR_MESSAGE("Unable to send %s", e.what());
     }
 }
 
-void H264VideoStream::addTrack(std::string id, const std::shared_ptr<H264VideoTrack>& track)
+void H264VideoTrack::sendKeyframe(rtc::binary initalNALUs)
+{
+    if(!initalNALUs.empty())
+    {
+        const double frameDuration_s = double() / (1000 * 1000);
+        const uint32_t frameTimestampDuration = srReporter->rtpConfig->secondsToTimestamp(frameDuration_s);
+        srReporter->rtpConfig->timestamp = srReporter->rtpConfig->startTimestamp - frameTimestampDuration * 2;
+        track->send(initalNALUs);
+        srReporter->rtpConfig->timestamp += frameTimestampDuration;
+        // Send initial NAL units again to start stream in firefox browser
+        track->send(initalNALUs);
+    }
+}
+
+H264VideoStream::H264VideoStream(unsigned int fps):
+framesPerSecond(fps), startTime(0), sampleTime_us(0)
+{
+    sampleDuration_us = (1000000UL)/fps;
+}
+
+void H264VideoStream::setStreamFps(unsigned int fps)
+{
+    framesPerSecond = fps;
+    sampleDuration_us = (1000000UL)/fps;
+}
+
+unsigned int H264VideoStream::getStreamFps()
+{
+    return framesPerSecond;
+}
+
+uint64_t H264VideoStream::getDuration_us()
+{
+    return sampleDuration_us;
+}
+
+void H264VideoStream::addTrack(std::string id,
+                               const std::shared_ptr<H264VideoTrack>& track)
 {
     lock.lock();
     tracks.insert({id, track});
@@ -120,13 +175,49 @@ void H264VideoStream::deleteById(std::string id)
     lock.unlock();
 }
 
-void H264VideoStream::onDataHandle(std::byte *data, size_t len, time_t time)
+bool H264VideoStream::hasTrack()
 {
+    bool ret;
+    lock.lock();
+    ret = tracks.empty();
+    lock.unlock();
+    return !ret;
+}
+
+NALUnit H264VideoStream::getInitialNALUS()
+{
+    NALUnit units{};
+    if (previousUnitType7.has_value()) {
+        auto nalu = previousUnitType7.value();
+        units.insert(units.end(), nalu.begin(), nalu.end());
+    }
+    if (previousUnitType8.has_value()) {
+        auto nalu = previousUnitType8.value();
+        units.insert(units.end(), nalu.begin(), nalu.end());
+    }
+    if (previousUnitType5.has_value()) {
+        auto nalu = previousUnitType5.value();
+        units.insert(units.end(), nalu.begin(), nalu.end());
+    }
+    return units;
+}
+
+void H264VideoStream::onDataHandle(std::byte *data, size_t len)
+{
+    std::time_t now = std::time({});
+    auto nalu = NALUnit(data, data+len);
     lock.lock();
     for(auto i: tracks)
     {
         lock.unlock();
-        i.second->send(data, len, time);
+        auto wkt = i.second;
+        if(wkt.expired()){
+            deleteById(i.first);
+        }else
+        {
+            wkt.lock()->send(std::move(nalu), now);
+        }
+        
         lock.lock();
     }
     lock.unlock();

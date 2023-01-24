@@ -13,6 +13,7 @@
 #include <string>
 
 #include <string.h>
+#include <errno.h>
 
 #include <fcntl.h>              /* low-level i/o */
 #include <unistd.h>
@@ -134,8 +135,8 @@ void VideoCapture::enumerateMenu(__u32 id, __u32 min_i, __u32 max_i){
 #endif
 
 VideoCapture::VideoCapture(std::string name)
-:fd(-1), imgSize(0), deviceName{name},
-isOpened(false), windows{0,0}
+:fd(-1), imgSize(0), deviceName{name}, isOpened(false),
+windows{0,0}, buffersNum(0), videoBuffers(nullptr)
 {
 }
 
@@ -167,7 +168,7 @@ void VideoCapture::openDevice(void){
         throw std::system_error(errno, std::generic_category(), 
             deviceName+" is no devicen");
     }
-    fd = open(deviceName.c_str(), O_RDWR);
+    fd = open(deviceName.c_str(), O_RDWR | O_NONBLOCK, 0);
     if(fd == -1){
         isOpened = false;
         ERROR_MESSAGE("video info: cannot open device! (%s (%d))\n", 
@@ -183,17 +184,8 @@ void VideoCapture::openDevice(void){
  */
 void VideoCapture::closeDevice(void){
     if(!isOpened) return;
-    
-    for(auto i: videoBuffer)
-    {
-        if(munmap(i.start, i.length) == -1)
-        {
-            ERROR_MESSAGE("munmap (%s(%d)).",
-                strerror(errno), errno);
-            throw std::system_error(errno, std::generic_category(), 
-                "munmap");
-        }
-    }
+
+    uninitMmap();
 
     if(close(fd)==-1){
         ERROR_MESSAGE("close device error! (%s (%d))\n", 
@@ -209,6 +201,8 @@ void VideoCapture::closeDevice(void){
  */
 void VideoCapture::checkDevCap(void){
     struct v4l2_capability video_cap;
+    struct v4l2_streamparm stream_parm;
+
     if(!isOpened){
         ERROR_MESSAGE("device(%s) has not been opened.",
             deviceName.c_str());
@@ -238,6 +232,30 @@ void VideoCapture::checkDevCap(void){
         V4L2_MESSAGE("Capture device:\t%s", video_cap.card);
         V4L2_MESSAGE("Capture deriver:\t%s.", video_cap.driver);
     }
+
+    memset(&stream_parm, 0, sizeof(stream_parm));
+    stream_parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if(ioctl(fd, VIDIOC_G_PARM, &stream_parm) == -1)
+    {        
+        ERROR_MESSAGE("VIDIOC_G_PARM (%s(%d)).",
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_G_PARM");
+    }else
+    {
+        if(stream_parm.parm.capture.capability == V4L2_CAP_TIMEPERFRAME)
+        {
+            uint32_t n = stream_parm.parm.capture.timeperframe.numerator;
+            uint32_t d = stream_parm.parm.capture.timeperframe.denominator;
+            fps = d/n;
+            V4L2_MESSAGE("stream fps: %d", fps);
+        }else
+        {
+            V4L2_MESSAGE("not support \'timeperframe\' parameter");
+        }
+        
+    }
+    
 }
 
 
@@ -373,6 +391,12 @@ void VideoCapture::setH264ProfileAndLevel(H264Profile profile,
             deviceName.c_str());
         throw std::runtime_error("device has not been opened.");
     }
+
+    if(!isOpened){
+        ERROR_MESSAGE("device(%s) has not opened.",
+            deviceName.c_str());
+        throw std::runtime_error("device has not been opened.");
+    }
     
     memset(&control, 0, sizeof(control));
     control.id = V4L2_CID_MPEG_VIDEO_H264_PROFILE;
@@ -405,24 +429,6 @@ void VideoCapture::setH264ProfileAndLevel(H264Profile profile,
     }
 }
 
-int VideoCapture::readVideoFrame(uint8_t *buf, size_t len){
-    if(!isOpened){
-        ERROR_MESSAGE("device(%s) has not opened.",
-            deviceName.c_str());
-        throw std::runtime_error("device has not been opened.");
-    }
-    int ret = read(fd, buf, len);
-    if(ret == -1){
-        ERROR_MESSAGE("read \'%s\' failed(%s(%d)).", deviceName.c_str(),
-            strerror(errno), errno);
-        throw std::system_error(errno, std::generic_category(), 
-            "read device failed");
-    }else if(ret == 0){
-        V4L2_MESSAGE("EOF Read");
-    }
-    return ret;
-}
-
 void VideoCapture::setWindow(WindowsSize win){
     switch (win)
     {
@@ -448,6 +454,79 @@ void VideoCapture::setWindow(WindowsSize win){
 
 }
 
+#ifdef READWRITE
+int VideoCapture::readVideoFrame(uint8_t *buf, size_t len){
+    if(!isOpened){
+        ERROR_MESSAGE("device(%s) has not opened.",
+            deviceName.c_str());
+        throw std::runtime_error("device has not been opened.");
+    }
+    int ret = read(fd, buf, len);
+    if(ret == -1){
+        ERROR_MESSAGE("read \'%s\' failed(%s(%d)).", deviceName.c_str(),
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "read device failed");
+    }else if(ret == 0){
+        V4L2_MESSAGE("EOF Read");
+    }
+    return ret;
+}
+#endif
+
+void VideoCapture::start()
+{
+    
+    if(!isOpened){
+        ERROR_MESSAGE("device(%s) has not opened.",
+            deviceName.c_str());
+        throw std::runtime_error("device has not been opened.");
+    }
+
+    for(size_t i = 0; i < buffersNum; i++) {
+        struct v4l2_buffer buf;
+
+        memset(&buf, 0, sizeof(buf));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index = i;
+
+        if(ioctl(fd, VIDIOC_QBUF, &buf) == -1)  
+        {        
+            ERROR_MESSAGE("VIDIOC_QBUF (%s(%d)).",
+                strerror(errno), errno);
+            throw std::system_error(errno, std::generic_category(), 
+                "VIDIOC_QBUF");
+        }
+    }
+    enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if(ioctl(fd, VIDIOC_STREAMON, &type) == -1)    
+    {        
+        ERROR_MESSAGE("VIDIOC_STREAMON (%s(%d)).",
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_STREAMON");
+    }
+}
+
+void VideoCapture::stop()
+{
+    if(!isOpened){
+        ERROR_MESSAGE("device(%s) has not opened.",
+            deviceName.c_str());
+        throw std::runtime_error("device has not been opened.");
+    }
+
+    enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (ioctl(fd, VIDIOC_STREAMOFF, &type) == -1)    
+    {        
+        ERROR_MESSAGE("VIDIOC_STREAMOFF (%s(%d)).",
+            strerror(errno), errno);
+        throw std::system_error(errno, std::generic_category(), 
+            "VIDIOC_STREAMOFF");
+    }
+}
+
 void VideoCapture::initMmap()
 {
     struct v4l2_requestbuffers reqbufs;
@@ -460,7 +539,7 @@ void VideoCapture::initMmap()
 
     memset(&reqbufs, 0, sizeof(reqbufs));
     
-    reqbufs.count = videoBuffersNum;
+    reqbufs.count = VideoBuffersMaxNum;
     reqbufs.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     reqbufs.memory = V4L2_MEMORY_MMAP;
     
@@ -472,26 +551,31 @@ void VideoCapture::initMmap()
             "VIDIOC_REQBUFS");
     }
 
-    if (reqbufs.count < 1)
+    if (reqbufs.count < 2)
     {        
         ERROR_MESSAGE("%s have no enough buffer. (%s(%d)).", deviceName.c_str(),
             strerror(errno), errno);
         throw std::system_error(errno, std::generic_category(), 
             deviceName + " have no enough buffer.");
     }
+    
+    videoBuffers = new buffer[reqbufs.count];
 
+    if(videoBuffers == nullptr)
+    {
+        ERROR_MESSAGE("allocate memory failed.");
+        throw std::runtime_error("allocate memory failed.");
+    }
 
-    for(size_t i = 0; i < reqbufs.count; i++)
+    for(buffersNum = 0; buffersNum < reqbufs.count; buffersNum++)
     {
         struct v4l2_buffer buf;
-        size_t len;
-        void *start;
 
         memset(&buf, 0, sizeof(buf));
 
         buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_MMAP;
-        buf.index = i;
+        buf.index = buffersNum;
 
         if(ioctl(fd, VIDIOC_QUERYBUF, &buf) == -1)
         {
@@ -501,34 +585,33 @@ void VideoCapture::initMmap()
                 "VIDIOC_QUERYBUF");
         }
 
-        len = buf.length;
-        start = mmap(NULL, len, PROT_READ|PROT_WRITE,
-                     MAP_SHARED, fd, buf.m.offset);
+        videoBuffers[buffersNum].length = buf.length;
+        videoBuffers[buffersNum].start = mmap(NULL, buf.length,
+                                              PROT_READ|PROT_WRITE,
+                                              MAP_SHARED, fd,
+                                              buf.m.offset);
 
-        if(start == MAP_FAILED)
+        if(videoBuffers[buffersNum].start == MAP_FAILED)
         {
             ERROR_MESSAGE("mmap (%s(%d)).",
                 strerror(errno), errno);
             throw std::system_error(errno, std::generic_category(), 
                 "mmap");
         }
-
-        videoBuffer.push_back({.start = start, .length = len});
     }
 }
 
-void VideoCapture::handleLoop()
+void VideoCapture::uninitMmap()
 {
-    if(videoBuffer.empty())
-    {
-        initMmap();
+    if(!isOpened){
+        ERROR_MESSAGE("device(%s) has not opened.",
+            deviceName.c_str());
+        throw std::runtime_error("device has not been opened.");
     }
 
-    for(; !videoBuffer.empty(); videoBuffer.pop_front())
+    for(size_t i=0; i < buffersNum; i++)
     {
-        auto& i = videoBuffer.front();
-        onSample(i.start, i.length);
-        if(munmap(i.start, i.length) == -1)
+        if(munmap(videoBuffers[i].start, videoBuffers[i].length) == -1)
         {
             ERROR_MESSAGE("munmap (%s(%d)).",
                 strerror(errno), errno);
@@ -536,6 +619,88 @@ void VideoCapture::handleLoop()
                 "munmap");
         }
     }
+    if(videoBuffers != nullptr)
+    {
+        delete[] videoBuffers;
+        videoBuffers = nullptr;
+    }
+    buffersNum = 0;
+}
 
+void VideoCapture::handleLoop()
+{
+    struct v4l2_buffer buf;
+    fd_set fds;
+    struct timeval tv;
+    int r;
+
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+
+    /* Timeout. */
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+    
+    r = select(fd + 1, &fds, NULL, NULL, &tv);
+
+    if(r == -1)
+    {
+        if(EINTR == errno) return;
+        else
+        {                
+            ERROR_MESSAGE("select: (%s(%d)).",
+                strerror(errno), errno);
+            throw std::system_error(errno, std::generic_category(), 
+                "select:");
+        }
+    }else if(r == 0)
+    {
+        ERROR_MESSAGE("Time out in select.");
+        throw std::runtime_error(
+            "Time out in select ");
+    }
+    /* EAGAIN - continue select loop. */
+    else
+    {
+        memset(&buf, 0, sizeof(buf));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+
+        if (ioctl(fd, VIDIOC_DQBUF, &buf) == -1) {
+            switch(errno)
+            {
+                case EAGAIN: return;
+
+                case EIO:
+                    /* Could ignore EIO, see spec. */
+
+                    /* fall through */
+
+                default:
+                {                            
+                    ERROR_MESSAGE("VIDIOC_DQBUF (%s(%d)).",
+                                  strerror(errno), errno);
+                    throw std::system_error(errno, std::generic_category(), 
+                                            "VIDIOC_DQBUF");
+                }
+            }
+        }
+
+        if(buf.index >= buffersNum)
+        {
+            ERROR_MESSAGE("index is out of range (%d>%d)).",
+                          buf.index, int(buffersNum));
+        }
+
+        onSample(videoBuffers[buf.index].start, buf.bytesused);
+
+        if (ioctl(fd, VIDIOC_QBUF, &buf) == -1)
+        {
+            ERROR_MESSAGE("VIDIOC_QBUF (%s(%d)).",
+                strerror(errno), errno);
+            throw std::system_error(errno, std::generic_category(), 
+                "VIDIOC_QBUF");
+        }
+    }
 }
 

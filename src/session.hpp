@@ -34,7 +34,6 @@ class RTCPeerSession
     public:
         RTCPeerSession(std::string id, const rtc::Configuration &config,
                        const std::shared_ptr<MqttConnect>& conn,
-                       const std::shared_ptr<H264VideoTrack>& vt,
                        RTCPeerSessionManager &mg);
         ~RTCPeerSession();
         OfferSession offerer;
@@ -44,7 +43,7 @@ class RTCPeerSession
         void setRemoteSdp(std::string sdp);
         void open();
         void close();
-        
+        void addToStream();
 };
 
 class RTCPeerSessionManager
@@ -53,7 +52,6 @@ class RTCPeerSessionManager
         RandomIdGenerator uidg;
         rtc::Configuration config;
         std::shared_ptr<MqttConnect> mqttConn;
-        std::shared_ptr<H264VideoStream> stream;
         std::vector<std::string> closedSessions;
         std::map<std::string, std::unique_ptr<RTCPeerSession>> peerSessions;
         
@@ -63,6 +61,8 @@ class RTCPeerSessionManager
                               const std::shared_ptr<MqttConnect>& conn,
                               const std::shared_ptr<H264VideoStream>& s);
         ~RTCPeerSessionManager()=default;
+
+        std::shared_ptr<H264VideoStream> stream;
         void createRTCPeerSession();
         void processMessage(std::string message);
         void deleteRTCPeerSession(const std::string& id);

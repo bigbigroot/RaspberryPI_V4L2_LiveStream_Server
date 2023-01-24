@@ -13,11 +13,17 @@
 
 RTCPeerSession::RTCPeerSession(std::string id, const rtc::Configuration &config,
                                const std::shared_ptr<MqttConnect>& conn,
-                               const std::shared_ptr<H264VideoTrack>& vt,
                                RTCPeerSessionManager &mg):
 isWilldestroyed(false), sessionId(id), pc(config),
-videoTrack(vt), offerer(id, conn), manager(mg)
-{}
+videoTrack(std::make_shared<H264VideoTrack>()), offerer(id, conn), manager(mg)
+{
+    videoTrack->onStart(
+        [this]()
+        {
+            this->addToStream();
+        }
+    );
+}
 
 RTCPeerSession::~RTCPeerSession()
 {
@@ -96,6 +102,11 @@ void RTCPeerSession::close()
     }
 }
 
+void RTCPeerSession::addToStream()
+{
+    manager.stream->addTrack(sessionId, videoTrack);
+}
+
 RTCPeerSessionManager::RTCPeerSessionManager(
     rtc::Configuration&& config,
     const std::shared_ptr<MqttConnect>& conn,
@@ -113,12 +124,9 @@ void RTCPeerSessionManager::createRTCPeerSession()
         id = uidg.allocateAUniqueId();
     } 
 
-    std::shared_ptr<H264VideoTrack> track = std::make_shared<H264VideoTrack>();
-
     auto session = 
-        std::make_unique<RTCPeerSession>(id, config, mqttConn, track, *this);
+        std::make_unique<RTCPeerSession>(id, config, mqttConn, *this);
     session->open();
-    stream->addTrack(id, track);
     peerSessions.insert({id, std::move(session)});
 }
 
@@ -159,7 +167,6 @@ void RTCPeerSessionManager::deleteRTCPeerSession(const std::string& id)
 
 void RTCPeerSessionManager::loopHandler()
 {
-    
     lock.lock();
     for(auto id: closedSessions)
     {

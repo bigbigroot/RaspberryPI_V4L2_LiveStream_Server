@@ -1,0 +1,1 @@
+scp weh@192.168.5.10:~/WifiCam/medianserver/LiveStreamServer ./
