@@ -12,5 +12,10 @@
         "clientid": "camera",
         "username": "test",
         "password": "test"
+    },
+    "video":
+    {
+        "source": "/dev/video0",
+        "resolution": "1080p"
     }
 }

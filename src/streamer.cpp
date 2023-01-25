@@ -8,6 +8,7 @@
  * @copyright Copyright (c) 2022
  * 
  */
+#include <string.h>
 
 #include "streamer.hpp"
 #include "utility.h"
@@ -44,6 +45,7 @@ frameDuration_s(frameDuration)
 // H264VideoTrack::~H264VideoTrack()
 // {
 // }
+
 void H264VideoTrack::addVideo(rtc::PeerConnection& pc)
 {
     const rtc::SSRC ssrc{1};
@@ -90,6 +92,7 @@ void H264VideoTrack::start()
 void H264VideoTrack::onStart(std::function<void()> callback)
 {
     startHandler = callback;
+
 }
 
 void H264VideoTrack::send(NALUnit data, uint64_t time)
@@ -113,7 +116,7 @@ void H264VideoTrack::send(NALUnit data, uint64_t time)
 
     try {
         // send sample
-        track->send(std::move(data));
+        track->send(data);
     } catch (const std::exception &e) {
         ERROR_MESSAGE("Unable to send %s", e.what());
     }
@@ -154,7 +157,16 @@ uint64_t H264VideoStream::getDuration_us()
 {
     return sampleDuration_us;
 }
+void H264VideoStream::start()
+{
+    sampleTime_us = std::numeric_limits<uint64_t>::max()
+                    - sampleDuration_us + 1;
+}
 
+void H264VideoStream::stop()
+{
+    sampleTime_us = 0;
+}
 void H264VideoStream::addTrack(std::string id,
                                const std::shared_ptr<H264VideoTrack>& track)
 {
@@ -204,23 +216,48 @@ NALUnit H264VideoStream::getInitialNALUS()
 
 void H264VideoStream::onDataHandle(std::byte *data, size_t len)
 {
-    std::time_t now = std::time({});
-    auto nalu = NALUnit(data, data+len);
-    lock.lock();
-    for(auto i: tracks)
+    if(memcmp(data, start_code, sizeof(start_code)) == 0)
     {
-        lock.unlock();
-        auto wkt = i.second;
-        if(wkt.expired()){
-            deleteById(i.first);
+        sampleTime_us += sampleDuration_us;
+        if(len > sizeof(start_code))
+        {
+            auto nalu = NALUnit(data, data+len);
+            char type = uint8_t(nalu[sizeof(start_code)]) & 0x1f;
+            switch (type)
+            {
+                case 7:
+                    previousUnitType7 = nalu;
+                    break;
+                case 8:
+                    previousUnitType8 = nalu;
+                    break;
+                case 5:
+                    previousUnitType5 = nalu;
+                    break;
+            }
+
+            lock.lock();
+            for(auto i: tracks)
+            {
+                lock.unlock();
+                auto wkt = i.second;
+                if(wkt.expired()){
+                    deleteById(i.first);
+                }else
+                {
+                    wkt.lock()->send(nalu, sampleTime_us);
+                }
+                
+                lock.lock();
+            }
+            lock.unlock();
         }else
         {
-            wkt.lock()->send(std::move(nalu), now);
+            ERROR_MESSAGE("this sample is too small.");
         }
-        
-        lock.lock();
+    }else{
+        ERROR_MESSAGE("this sample is no with the start code at the start!");
     }
-    lock.unlock();
 }
 
 std::string H264VideoStream::getProfileLevelId(

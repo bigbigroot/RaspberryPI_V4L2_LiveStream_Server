@@ -62,6 +62,8 @@ class H264VideoStream
         void setStreamFps(unsigned int fps);
         unsigned int getStreamFps();
         uint64_t getDuration_us();
+        void start();
+        void stop();
         void addTrack(std::string id, const std::shared_ptr<H264VideoTrack>& track);
         void deleteById(std::string id);
         void onDataHandle(std::byte *data, size_t len);

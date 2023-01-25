@@ -15,8 +15,10 @@ RTCPeerSession::RTCPeerSession(std::string id, const rtc::Configuration &config,
                                const std::shared_ptr<MqttConnect>& conn,
                                RTCPeerSessionManager &mg):
 isWilldestroyed(false), sessionId(id), pc(config),
-videoTrack(std::make_shared<H264VideoTrack>()), offerer(id, conn), manager(mg)
+offerer(id, conn), manager(mg)
 {
+    double duration_s = double(manager.stream->getDuration_us()) / 1000*1000;
+    videoTrack = std::make_shared<H264VideoTrack>(duration_s);
     videoTrack->onStart(
         [this]()
         {
@@ -104,6 +106,7 @@ void RTCPeerSession::close()
 
 void RTCPeerSession::addToStream()
 {
+    videoTrack->sendKeyframe(manager.stream->getInitialNALUS());
     manager.stream->addTrack(sessionId, videoTrack);
 }
 

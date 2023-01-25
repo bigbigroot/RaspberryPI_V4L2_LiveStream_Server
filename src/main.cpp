@@ -72,6 +72,16 @@ int main(int argc, char *argv[]) {
             rtcConfig.iceServers.emplace_back(rtc::IceServer(url));
         }
 
+        camera = std::make_shared<VideoCapture>("/dev/video0");
+
+        camera->setWindow(VideoCapture::WindowsSize::pixel_1080p);
+        camera->openDevice();
+        camera->checkDevCap();
+        camera->checkAllContol();
+        camera->checkVideoFormat();
+
+        auto fps = camera->getVideoStreamFps();
+        videoStream = std::make_shared<H264VideoStream>(fps);
         mqttConn = std::make_shared<MqttConnect>(
             mqttURL, mqttClientId,mqttUsername, mqttPassword);
         peers = std::make_unique<RTCPeerSessionManager>(std::move(rtcConfig), mqttConn, videoStream);
@@ -127,23 +137,14 @@ int main(int argc, char *argv[]) {
         mqttConn->subscribeTopic("webrtc/notify/camera");
         mqttConn->subscribeTopic("webrtc/roap/camera");
 
-        camera = std::make_shared<VideoCapture>("/dev/video0");
-
-        camera->setWindow(VideoCapture::WindowsSize::pixel_720p);
-        camera->openDevice();
-        camera->checkDevCap();
-        camera->checkAllContol();
-        camera->checkVideoFormat();
-        camera->setVideoFormat();
-        camera->setH264ProfileAndLevel(H264Profile::Constrained_Baseline,
-                                       H264Level::Level3_1);
-        auto fps = camera->getVideoStreamFps();
-        videoStream = std::make_shared<H264VideoStream>(fps);
 
         camera->onSample = [&videoStream](void *data, size_t len)
         {
             videoStream->onDataHandle(reinterpret_cast<std::byte *>(data), len);
         };
+        camera->setVideoFormat();
+        camera->setH264ProfileAndLevel(H264Profile::Constrained_Baseline,
+                                       H264Level::Level3_1);
         camera->initMmap();
         camera->start();
 
