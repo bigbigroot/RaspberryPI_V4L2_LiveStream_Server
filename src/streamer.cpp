@@ -118,7 +118,7 @@ void H264VideoTrack::send(NALUnit data, uint64_t time)
         // send sample
         track->send(data);
     } catch (const std::exception &e) {
-        ERROR_MESSAGE("Unable to send %s", e.what());
+        ERROR_MESSAGE("Unable to send, because %s", e.what());
     }
 }
 
@@ -239,7 +239,6 @@ void H264VideoStream::onDataHandle(std::byte *data, size_t len)
             lock.lock();
             for(auto i: tracks)
             {
-                lock.unlock();
                 auto wkt = i.second;
                 if(wkt.expired()){
                     deleteById(i.first);
@@ -247,8 +246,6 @@ void H264VideoStream::onDataHandle(std::byte *data, size_t len)
                 {
                     wkt.lock()->send(nalu, sampleTime_us);
                 }
-                
-                lock.lock();
             }
             lock.unlock();
         }else

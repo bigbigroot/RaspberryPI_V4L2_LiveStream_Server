@@ -440,14 +440,14 @@ void VideoCapture::setWindow(WindowsSize win){
         }
         case WindowsSize::pixel_1080p:
         {
-            windows.height = 1920;
-            windows.width = 1080;
+            windows.height = 1080;
+            windows.width = 1920;
             break;
         }
         case WindowsSize::pixel_5MP:
         {
-            windows.height = 2592;
-            windows.width = 1944;
+            windows.height = 1944;
+            windows.width = 2592;
             break;
         }    
     }

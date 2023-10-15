@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
 
         camera = std::make_shared<VideoCapture>("/dev/video0");
 
-        camera->setWindow(VideoCapture::WindowsSize::pixel_1080p);
+        camera->setWindow(VideoCapture::WindowsSize::pixel_720p);
         camera->openDevice();
         camera->checkDevCap();
         camera->checkAllContol();
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
             mqttURL, mqttClientId,mqttUsername, mqttPassword);
         peers = std::make_unique<RTCPeerSessionManager>(std::move(rtcConfig), mqttConn, videoStream);
 
-        rtc::InitLogger(rtc::LogLevel::Verbose, 
+        rtc::InitLogger(rtc::LogLevel::Error, 
             [](rtc::LogLevel logLevel, std::string msg){
                 switch (logLevel)
                 {
